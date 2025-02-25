@@ -1,0 +1,36 @@
+export const translations = {
+  pt: {
+    pesquisar: "Pesquisar",
+    acoes_rapidas: "Ações Rápidas",
+    chats_agentes: "Chats & Agentes",
+    criar_novo_chat: "Criar Novo Chat",
+    conectar_whatsapp: "Conectar WhatsApp",
+    ver_dashboards: "Ver Métricas",
+    agente_de_vendas_sdr: "Agente de Vendas SDR",
+    agente_de_atendimento: "Agente de Atendimento",
+    agente_de_suporte: "Agente de Suporte",
+  },
+  en: {
+    pesquisar: "Search",
+    acoes_rapidas: "Quick Actions",
+    chats_agentes: "Chats & Agents",
+    criar_novo_chat: "Create New Chat",
+    conectar_whatsapp: "Connect WhatsApp",
+    ver_dashboards: "View Metrics",
+    agente_de_vendas_sdr: "Sales SDR Agent",
+    agente_de_atendimento: "Customer Service Agent",
+    agente_de_suporte: "Support Agent",
+  },
+  es: {
+    pesquisar: "Buscar",
+    acoes_rapidas: "Acciones Rápidas",
+    chats_agentes: "Chats & Agentes",
+    criar_novo_chat: "Crear Nuevo Chat",
+    conectar_whatsapp: "Conectar WhatsApp",
+    ver_dashboards: "Ver Métricas",
+    agente_de_vendas_sdr: "Agente de Ventas SDR",
+    agente_de_atendimento: "Agente de Atención al Cliente",
+    agente_de_suporte: "Agente de Soporte",
+  },
+}
+
