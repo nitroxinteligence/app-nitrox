@@ -133,6 +133,7 @@ export default function useOpenAIUsage(): OpenAIUsageHookResult {
   const [error, setError] = useState<string | null>(null)
   const [supabaseClient, setSupabaseClient] = useState<SupabaseClient | null>(null)
   const requestInProgress = useRef(false)
+  const [syncError, setSyncError] = useState<string | null>(null)
 
   // Inicializar o cliente Supabase
   useEffect(() => {
@@ -713,53 +714,62 @@ export default function useOpenAIUsage(): OpenAIUsageHookResult {
    * Função para sincronizar dados com o N8N
    */
   const syncWithSupabase = async () => {
-    if (!supabaseClient) {
-      toast.error('Cliente Supabase não disponível');
-      return;
-    }
+    setIsLoading(true)
+    setSyncError(null)
     
     try {
-      setIsLoading(true);
+      console.log('Iniciando sincronização manual de dados com o Supabase...')
       
-      // Primeiro, atualizar o resumo diário
-      const { data: updateResult, error: updateError } = await supabaseClient
-        .rpc('update_openai_daily_summary');
+      // Atualizar o resumo diário primeiro (opcional, pois a Edge Function também faz isso)
+      await fetch('/api/openai/update-daily-summary', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
       
-      if (updateError) {
-        console.warn('Aviso: Erro ao atualizar resumo diário:', updateError);
-      }
-      
-      // Chamar a nova API que utiliza a Edge Function
-      const response = await fetch('/api/agent/sync', {
+      // Chamar nossa API de sincronização automática
+      const response = await fetch('/api/cron/sync-n8n', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ forceSync: true })
-      });
+          'Authorization': `Bearer sync-n8n-cron-secret`
+        }
+      })
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Erro ao sincronizar dados');
+        throw new Error(`Erro na sincronização: ${response.status}`)
       }
       
-      const result = await response.json();
+      const data = await response.json()
+      console.log('Resposta da sincronização:', data)
       
-      toast.success('Dados sincronizados com sucesso', {
-        description: `${result.stats?.recordsSaved || 0} registros de uso de OpenAI foram sincronizados.`
-      });
+      // Atualizar os dados após a sincronização
+      await fetchUsageData()
       
-      // Atualizar dados após sincronização
-      await fetchUsageData(true);
-    } catch (err) {
-      console.error('Erro na sincronização:', err);
-      toast.error('Erro ao sincronizar dados', {
-        description: err instanceof Error ? err.message : 'Ocorreu um erro na sincronização'
-      });
+      // Exibir mensagem de sucesso com dados extraídos
+      const extractedCount = data.stats?.recordsExtracted || 0
+      const savedCount = data.stats?.recordsSaved || 0
+      
+      toast.success(
+        `Sincronização concluída: ${savedCount} registros salvos`, 
+        { description: `Foram extraídos ${extractedCount} registros de uso da OpenAI. Duração: ${data.duration || '?'}` }
+      )
+      
+      return data
+    } catch (error) {
+      console.error('Erro ao sincronizar dados com Supabase:', error)
+      setSyncError(error instanceof Error ? error.message : 'Erro desconhecido')
+      
+      toast.error('Falha na sincronização', {
+        description: error instanceof Error ? error.message : 'Erro desconhecido ao sincronizar dados'
+      })
+      
+      throw error
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
+  }
 
   /**
    * Função para exportar dados para CSV

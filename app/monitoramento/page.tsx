@@ -275,16 +275,34 @@ export default function MonitoringPage() {
         description: 'Buscando informações de uso dos agentes no N8N.'
       })
       
-      await syncWithSupabase()
+      // Usando nosso novo endpoint de sincronização CRON
+      const response = await fetch('/api/cron/sync-n8n', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer sync-n8n-cron-secret`
+        }
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erro ao sincronizar dados');
+      }
+      
+      const result = await response.json();
       
       setSyncStats({
         status: 'success',
-        message: 'Sincronização concluída',
+        message: `Sincronização concluída: ${result.stats?.recordsSaved || 0} registros salvos de ${result.stats?.recordsExtracted || 0} extraídos`,
         timestamp: new Date().toISOString()
       })
       
       // Atualizar dados automaticamente
       refreshData()
+      
+      toast.success(`Sincronização concluída: ${result.stats?.recordsSaved || 0} registros salvos`, {
+        description: `Foram extraídos ${result.stats?.recordsExtracted || 0} registros de uso da OpenAI. Duração: ${result.duration || '?'}`
+      });
     } catch (error) {
       console.error('Erro ao sincronizar dados com N8N:', error)
       

@@ -1,63 +1,81 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { NextResponse } from "next/server";
+import { createClient } from '@supabase/supabase-js';
 
-interface OpenAICost {
-  model: string;
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-  timestamp: string;
-  executionId: string;
-  nodeId: string;
-  cost: number;
-  nodeName?: string;
-  rawModel?: string;
-}
+// Configuração do endpoint com proteção CRON
+export const dynamic = 'force-dynamic';
+export const maxDuration = 300; // 5 minutos de tempo máximo de execução
 
-interface N8nWorkflow {
-  id: string;
-  name: string;
-  active: boolean;
-  tags: any[];
-}
+// URLs e chaves de API
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
+const N8N_API_URL = process.env.NEXT_PUBLIC_N8N_API_URL || "";
+const N8N_API_KEY = process.env.NEXT_PUBLIC_N8N_API_KEY || "";
 
-serve(async (req) => {
-  // Configuração do CORS para permitir requisições da sua aplicação
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-      }
-    })
+// Chave para proteção do endpoint CRON
+const CRON_SECRET = process.env.CRON_SECRET || "sync-n8n-cron-secret";
+
+// Endpoint GET para facilitar a configuração do CRON no Vercel ou outros serviços
+export async function GET(request: Request) {
+  console.log("Sincronização CRON iniciada");
+  
+  // Verificar o token de autorização (para proteção do cron)
+  const { searchParams } = new URL(request.url);
+  const authToken = searchParams.get('token');
+  
+  if (authToken !== CRON_SECRET) {
+    console.warn("Tentativa de acesso ao CRON com token inválido");
+    return NextResponse.json(
+      { success: false, error: "Token inválido" },
+      { status: 401 }
+    );
   }
+  
+  return await syncN8NData();
+}
 
+// Endpoint POST para acionamento manual
+export async function POST(request: Request) {
+  // Verificar o token de autorização no cabeçalho
+  const authHeader = request.headers.get('authorization') || '';
+  if (!authHeader.startsWith('Bearer ') || authHeader.slice(7) !== CRON_SECRET) {
+    console.warn("Tentativa de acesso ao CRON com token inválido");
+    return NextResponse.json(
+      { success: false, error: "Token inválido" },
+      { status: 401 }
+    );
+  }
+  
+  return await syncN8NData();
+}
+
+// Função de sincronização
+async function syncN8NData() {
+  console.log("Iniciando sincronização direta N8N -> Supabase");
+  
   try {
-    // Obter as variáveis de ambiente
-    const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-    const N8N_API_URL = Deno.env.get('N8N_API_URL') || '';
-    const N8N_API_KEY = Deno.env.get('N8N_API_KEY') || '';
-
-    // Verificar configurações necessárias
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Configurações do Supabase não encontradas' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+      console.error("Configurações do Supabase ausentes");
+      return NextResponse.json(
+        { success: false, error: "Configurações do Supabase ausentes" },
+        { status: 500 }
       );
     }
-
+    
     if (!N8N_API_URL || !N8N_API_KEY) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Configurações da API do N8N não encontradas' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      console.error("Configurações da API do N8N ausentes");
+      return NextResponse.json(
+        { success: false, error: "Configurações da API do N8N ausentes" },
+        { status: 500 }
       );
     }
-
-    // Inicializar cliente Supabase com chave de serviço para ter permissões completas
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
+    
+    // Inicializar cliente Supabase
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+    
+    // Timestamp para log e rastreabilidade
+    const startTime = new Date();
+    console.log(`Sincronização iniciada em: ${startTime.toISOString()}`);
+    
     // Estatísticas para retorno
     const stats = {
       workflowsProcessed: 0,
@@ -66,38 +84,8 @@ serve(async (req) => {
       recordsSaved: 0,
       errors: 0
     };
-
-    // Parâmetros opcionais da solicitação
-    let params = {
-      forceSync: true,
-      debug: true,
-      specificWorkflowId: null,
-      source: 'manual',
-      lookbackDays: 3 // Padrão: 3 dias
-    };
     
-    try {
-      const body = await req.json();
-      params = { ...params, ...body };
-    } catch (e) {
-      // Se não for possível analisar o corpo, continuamos com parâmetros padrão
-      console.log('Corpo da requisição vazio ou inválido, usando parâmetros padrão');
-    }
-
-    const forceSync = params.forceSync;
-    const debug = params.debug;
-    const specificWorkflowId = params.specificWorkflowId;
-    const source = params.source;
-    const lookbackDays = params.lookbackDays;
-
-    console.log(`Iniciando sincronização (fonte: ${source})...`);
-    console.log(`Período de busca: últimos ${lookbackDays} dias`);
-    
-    if (specificWorkflowId) {
-      console.log(`Sincronização específica para o workflow ID: ${specificWorkflowId}`);
-    }
-
-    // 1. Buscar workflows com tag 'agent' (ou um workflow específico)
+    // 1. Buscar workflows com tag 'agent'
     console.log('Buscando workflows...');
     const workflowsResponse = await fetch(`${N8N_API_URL}/workflows`, {
       method: 'GET',
@@ -114,15 +102,10 @@ serve(async (req) => {
     const workflowsData = await workflowsResponse.json();
     const allWorkflows = workflowsData.data || [];
     
-    // Log para diagnóstico
-    console.log(`Obtidos ${allWorkflows.length} workflows totais`);
+    // Filtrar workflows com tag 'agent'
+    const agentWorkflows = allWorkflows.filter((wf: any) => hasAgentTag(wf));
     
-    // Filtrar workflows com tag 'agent' ou o workflow específico
-    const agentWorkflows = specificWorkflowId 
-      ? allWorkflows.filter((wf: N8nWorkflow) => wf.id === specificWorkflowId)
-      : allWorkflows.filter((wf: N8nWorkflow) => hasAgentTag(wf));
-    
-    console.log(`Encontrados ${agentWorkflows.length} workflows para processar`);
+    console.log(`Encontrados ${agentWorkflows.length} workflows com tag agent`);
     
     // Log detalhado para cada workflow
     for (const wf of agentWorkflows) {
@@ -131,43 +114,27 @@ serve(async (req) => {
       console.log(`    Ativo: ${wf.active}`);
     }
     
-    // Se não encontrarmos nenhum workflow, retornamos erro
-    if (agentWorkflows.length === 0) {
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: specificWorkflowId 
-            ? `Workflow com ID ${specificWorkflowId} não encontrado ou não tem tag 'agent'` 
-            : 'Nenhum workflow com tag agent encontrado' 
-        }),
-        { status: 404, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-    
-    // Lista para armazenar todos os registros a serem inseridos
-    const allRecords: any[] = [];
-    
     // 2. Para cada workflow, buscar execuções e extrair métricas
+    const allRecords: any[] = [];
+    const lookbackDays = 7; // Buscar execuções dos últimos 7 dias
+    
     for (const workflow of agentWorkflows) {
       try {
         console.log(`Processando workflow: ${workflow.name} (${workflow.id})`);
         stats.workflowsProcessed++;
         
-        // Buscar execuções do período definido (limitar a 100 para evitar sobrecarga)
+        // Buscar execuções dos últimos dias
         const dateLimit = new Date();
         dateLimit.setDate(dateLimit.getDate() - lookbackDays);
         const dateStr = dateLimit.toISOString();
-        
-        console.log(`Buscando execuções desde: ${dateStr}`);
         
         // Construir URL para buscar execuções
         const executionsUrl = new URL(`${N8N_API_URL}/executions`);
         executionsUrl.searchParams.append('workflowId', workflow.id);
         executionsUrl.searchParams.append('status', 'success');
-        executionsUrl.searchParams.append('startedAfter', dateStr);
         executionsUrl.searchParams.append('limit', '100');
         
-        console.log(`URL de execuções: ${executionsUrl.toString()}`);
+        console.log(`Buscando execuções desde: ${dateStr}`);
         
         const executionsResponse = await fetch(executionsUrl.toString(), {
           method: 'GET',
@@ -215,25 +182,27 @@ serve(async (req) => {
       }
     }
     
-    // 3. Inserir registros no Supabase em lotes (até 50 por vez)
+    // 3. Salvar registros no Supabase em lotes
     if (allRecords.length > 0) {
-      console.log(`Inserindo ${allRecords.length} registros no Supabase`);
+      console.log(`Salvando ${allRecords.length} registros no Supabase...`);
       
-      // Função para dividir um array em partes
-      const chunk = (arr: any[], size: number) => 
-        Array.from({ length: Math.ceil(arr.length / size) }, (v, i) =>
-          arr.slice(i * size, i * size + size)
-        );
+      // Dividir em lotes menores para evitar limites da API
+      const batchSize = 50;
+      const batches = [];
       
-      // Dividir registros em lotes de 50
-      const batches = chunk(allRecords, 50);
+      for (let i = 0; i < allRecords.length; i += batchSize) {
+        batches.push(allRecords.slice(i, i + batchSize));
+      }
       
+      console.log(`Dividido em ${batches.length} lotes de até ${batchSize} registros`);
+      
+      // Inserir cada lote
       for (let i = 0; i < batches.length; i++) {
         const batch = batches[i];
         console.log(`Inserindo lote ${i+1}/${batches.length} (${batch.length} registros)`);
         
         try {
-          // Enviar diretamente para o Supabase
+          // Enviar para o Supabase
           const { data, error } = await supabase
             .from('openai_usage')
             .upsert(batch, { 
@@ -280,48 +249,39 @@ serve(async (req) => {
       console.log('Nenhum registro para inserir');
     }
     
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: `Sincronização concluída: ${stats.recordsSaved} registros salvos de ${stats.recordsExtracted} extraídos`,
-        stats,
-        source
-      }),
-      { 
-        status: 200, 
-        headers: { 
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*' 
-        } 
-      }
-    );
-  } catch (error) {
-    console.error('Erro na sincronização:', error);
+    const endTime = new Date();
+    const duration = (endTime.getTime() - startTime.getTime()) / 1000;
     
-    return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Erro desconhecido na sincronização' 
-      }),
+    console.log(`Sincronização concluída em ${duration}s: ${stats.recordsSaved} registros salvos`);
+    
+    return NextResponse.json({
+      success: true,
+      message: `Sincronização automática concluída com sucesso em ${duration}s`,
+      stats,
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+      duration: `${duration}s`
+    });
+  } catch (error: any) {
+    console.error("Erro fatal na sincronização CRON:", error);
+    return NextResponse.json(
       { 
-        status: 500, 
-        headers: { 
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*' 
-        } 
-      }
+        success: false, 
+        error: error instanceof Error ? error.message : "Erro desconhecido",
+        stack: error instanceof Error ? error.stack : undefined
+      },
+      { status: 500 }
     );
   }
-});
+}
 
-// Função auxiliar para verificar se o workflow tem a tag 'agent'
-function hasAgentTag(workflow: N8nWorkflow): boolean {
+// Função para verificar se um workflow tem a tag 'agent'
+function hasAgentTag(workflow: any): boolean {
   if (!workflow.tags || !Array.isArray(workflow.tags) || workflow.tags.length === 0) {
     return false;
   }
   
-  // Função mais robusta para verificar tags
-  return workflow.tags.some(tag => {
+  return workflow.tags.some((tag: any) => {
     // Caso 1: tag é uma string
     if (typeof tag === 'string') {
       return tag.toLowerCase() === 'agent';
@@ -339,8 +299,8 @@ function hasAgentTag(workflow: N8nWorkflow): boolean {
 }
 
 // Função para extrair custos da OpenAI de uma execução
-function extractOpenAICostsFromExecution(execution: any): OpenAICost[] {
-  const costs: OpenAICost[] = [];
+function extractOpenAICostsFromExecution(execution: any): any[] {
+  const costs: any[] = [];
   
   try {
     // Verificar se temos dados de resultado
@@ -401,100 +361,138 @@ function extractOpenAICostsFromExecution(execution: any): OpenAICost[] {
   return costs;
 }
 
-// Função para identificar e extrair informações de uso da OpenAI
-function getOpenAIInfo(json: any): OpenAICost | null {
-  // Verificar padrões comuns de resposta da OpenAI
-  if (json.model && (json.usage || json.tokenUsage)) {
-    // Extrai informações de tokens
-    const usage = json.usage || json.tokenUsage || {};
-    const promptTokens = usage.prompt_tokens || usage.promptTokens || 0;
-    const completionTokens = usage.completion_tokens || usage.completionTokens || 0;
-    const totalTokens = usage.total_tokens || usage.totalTokens || (promptTokens + completionTokens);
-    
-    // Buscar o modelo e calcular o custo
-    const rawModel = json.model;
-    const model = mapToCorrectModel(rawModel);
-    const cost = calculateCost(model, promptTokens, completionTokens);
-    
-    return {
-      model,
-      promptTokens,
-      completionTokens,
-      totalTokens,
-      cost,
-      timestamp: '',  // Será preenchido pela função chamadora
-      executionId: '', // Será preenchido pela função chamadora
-      nodeId: '',     // Será preenchido pela função chamadora
-      rawModel
-    };
+// Função para extrair informações de uso da OpenAI de um objeto JSON
+function getOpenAIInfo(json: any): any | null {
+  // Verificar se é uma resposta da OpenAI
+  if (!json || typeof json !== 'object') {
+    return null;
   }
   
-  return null;
-}
-
-// Função para normalizar nomes de modelo
-function mapToCorrectModel(inputModel: string): string {
-  if (!inputModel) return 'unknown';
+  // Verificar se temos um campo 'model' ou 'usage' indicando que é uma resposta da OpenAI
+  if (!json.model && !json.usage && !json.object) {
+    return null;
+  }
   
-  const model = inputModel.toLowerCase().trim();
+  // Verificar pelos campos do objeto de resposta da OpenAI
+  const isOpenAI = 
+    json.object === 'chat.completion' || 
+    json.object === 'text_completion' ||
+    (json.usage && (json.usage.prompt_tokens || json.usage.completion_tokens));
   
-  if (model.includes('gpt-4') && model.includes('turbo')) {
-    return 'gpt-4o';
-  } else if (model.includes('gpt-3.5') && model.includes('turbo')) {
-    return 'gpt-4o-mini';
-  } else if (model.includes('vision') || model.includes('dall')) {
-    return 'gpt-4-vision';
+  if (!isOpenAI) {
+    return null;
+  }
+  
+  // Extrair dados de uso
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let totalTokens = 0;
+  
+  if (json.usage) {
+    promptTokens = json.usage.prompt_tokens || 0;
+    completionTokens = json.usage.completion_tokens || 0;
+    totalTokens = json.usage.total_tokens || (promptTokens + completionTokens);
   } else {
-    return model;
+    // Se não tiver usage explícito, tentar extrair de outros campos
+    promptTokens = json.prompt_tokens || 0;
+    completionTokens = json.completion_tokens || 0;
+    totalTokens = json.total_tokens || (promptTokens + completionTokens);
   }
+  
+  // Normalizar nome do modelo
+  const rawModel = json.model || '';
+  const model = normalizeModelName(rawModel);
+  
+  // Calcular custo aproximado
+  const cost = calculateCost(model, promptTokens, completionTokens);
+  
+  return {
+    model,
+    rawModel,
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    cost
+  };
 }
 
-// Função para calcular o custo com base no modelo e tokens
+// Função para normalizar o nome do modelo
+function normalizeModelName(model: string): string {
+  if (!model) return 'unknown';
+  
+  const modelLower = model.toLowerCase();
+  
+  // GPT-4
+  if (modelLower.includes('gpt-4-turbo')) return 'gpt-4-turbo';
+  if (modelLower.includes('gpt-4-1106')) return 'gpt-4-turbo';
+  if (modelLower.includes('gpt-4-0125')) return 'gpt-4-turbo';
+  if (modelLower.includes('gpt-4-32k')) return 'gpt-4-32k';
+  if (modelLower.includes('gpt-4-')) return 'gpt-4'; // Outras variantes do GPT-4
+  if (modelLower.includes('gpt-4')) return 'gpt-4';
+  
+  // GPT-3.5 Turbo
+  if (modelLower.includes('gpt-3.5-turbo-16k')) return 'gpt-3.5-turbo-16k';
+  if (modelLower.includes('gpt-3.5-turbo-1106')) return 'gpt-3.5-turbo';
+  if (modelLower.includes('gpt-3.5-turbo-0125')) return 'gpt-3.5-turbo';
+  if (modelLower.includes('gpt-3.5-turbo')) return 'gpt-3.5-turbo';
+  
+  // Modelos Claude
+  if (modelLower.includes('claude-3-opus')) return 'claude-3-opus';
+  if (modelLower.includes('claude-3-sonnet')) return 'claude-3-sonnet';
+  if (modelLower.includes('claude-3-haiku')) return 'claude-3-haiku';
+  if (modelLower.includes('claude-2')) return 'claude-2';
+  if (modelLower.includes('claude-1')) return 'claude-1';
+  if (modelLower.includes('claude-instant')) return 'claude-instant';
+  
+  // Outros modelos Groq
+  if (modelLower.includes('llama-3')) return 'llama-3';
+  if (modelLower.includes('llama2')) return 'llama2';
+  if (modelLower.includes('mixtral')) return 'mixtral';
+  
+  // Retornar o nome original se não reconhecido
+  return model;
+}
+
+// Função para calcular o custo aproximado
 function calculateCost(model: string, promptTokens: number, completionTokens: number): number {
-  // Tabela de custos por 1000 tokens (preços atualizados)
-  const pricing: Record<string, { prompt: number, completion: number }> = {
-    'gpt-4o': { prompt: 0.005, completion: 0.015 },
-    'gpt-4o-mini': { prompt: 0.0015, completion: 0.002 },
-    'gpt-4': { prompt: 0.03, completion: 0.06 },
-    'gpt-4-32k': { prompt: 0.06, completion: 0.12 },
-    'gpt-4-turbo': { prompt: 0.01, completion: 0.03 },
-    'gpt-4-vision': { prompt: 0.01, completion: 0.03 },
-    'gpt-3.5-turbo': { prompt: 0.0015, completion: 0.002 },
-    'gpt-3.5-turbo-16k': { prompt: 0.003, completion: 0.004 },
-    'text-embedding-ada-002': { prompt: 0.0001, completion: 0.0001 },
-    'text-embedding-3-small': { prompt: 0.00002, completion: 0.00002 },
-    'text-embedding-3-large': { prompt: 0.00013, completion: 0.00013 }
+  // Preços por 1000 tokens em USD
+  const prices: Record<string, [number, number]> = {
+    'gpt-4-turbo': [0.01, 0.03],  // Input, Output
+    'gpt-4': [0.03, 0.06],
+    'gpt-4-32k': [0.06, 0.12],
+    'gpt-3.5-turbo': [0.0005, 0.0015],
+    'gpt-3.5-turbo-16k': [0.001, 0.002],
+    'claude-3-opus': [0.015, 0.075],
+    'claude-3-sonnet': [0.003, 0.015],
+    'claude-3-haiku': [0.00025, 0.00125],
+    'claude-2': [0.008, 0.024],
+    'claude-1': [0.008, 0.024],
+    'claude-instant': [0.0016, 0.0056],
+    'llama-3': [0.0004, 0.0004],  // Taxa fixa
+    'llama2': [0.0004, 0.0004],   // Taxa fixa
+    'mixtral': [0.0004, 0.0004]   // Taxa fixa
   };
   
-  // Encontrar o preço correto usando correspondência parcial
-  let modelPricing;
-  for (const [key, price] of Object.entries(pricing)) {
-    if (model.includes(key)) {
-      modelPricing = price;
-      break;
-    }
-  }
-  
-  // Usar preço padrão se não encontrarmos correspondência
-  modelPricing = modelPricing || { prompt: 0.002, completion: 0.002 };
+  // Use o preço do modelo especificado ou um padrão conservador
+  const [promptPrice, completionPrice] = prices[model] || [0.01, 0.03];
   
   // Calcular o custo total
-  const promptCost = (promptTokens / 1000) * modelPricing.prompt;
-  const completionCost = (completionTokens / 1000) * modelPricing.completion;
+  const promptCost = (promptTokens / 1000) * promptPrice;
+  const completionCost = (completionTokens / 1000) * completionPrice;
   
   return promptCost + completionCost;
 }
 
 // Função para formatar registro para o formato esperado pelo Supabase
-function formatRecordForSupabase(cost: OpenAICost, workflow: N8nWorkflow): any {
-  // Garantir que temos um request_id único
+function formatRecordForSupabase(cost: any, workflow: any): any {
+  // Gerar request_id único baseado na execução e no nó
   const requestId = `n8n_${cost.executionId || Date.now()}_${cost.nodeId || 'node'}_${Math.random().toString(36).substring(2, 7)}`;
   
   // Formatar tags corretamente (sempre como array)
   let tags = ['agent'];
   if (workflow.tags) {
     if (Array.isArray(workflow.tags)) {
-      workflow.tags.forEach(tag => {
+      workflow.tags.forEach((tag: any) => {
         // Melhor tratamento para diferentes tipos de tag
         let tagName = '';
         if (typeof tag === 'string') {
@@ -525,9 +523,9 @@ function formatRecordForSupabase(cost: OpenAICost, workflow: N8nWorkflow): any {
     node_name: cost.nodeName,
     execution_id: cost.executionId,
     
-    // Campos de modelo - incluir ambas as versões (com M maiúsculo e minúsculo)
+    // Campos de modelo - incluir ambas as versões
     model: cost.model,
-    "Model": cost.model, // Versão com M maiúsculo para compatibilidade
+    "Model": cost.model, // Versão com M maiúsculo para compatibilidade com a interface
     
     // Campos de uso
     endpoint: 'chat',

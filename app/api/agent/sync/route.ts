@@ -43,8 +43,10 @@ export async function POST(request: Request) {
         'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`
       },
       body: JSON.stringify({
-        forceSync: body.forceSync || true,
-        debug: body.debug || true
+        forceSync: true,
+        debug: true,
+        specificWorkflowId: body.specificWorkflowId || null,
+        source: body.source || 'api'
       })
     });
     
