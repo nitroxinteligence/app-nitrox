@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { motion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
 import { BarChart2, Users, ArrowUpRight, ArrowDownRight, DollarSign, CreditCard, UserCheck, MessageSquare } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -12,6 +12,10 @@ import { LeadsChart } from "@/components/dashboard/leads-chart"
 import { DashboardProvider } from "@/contexts/DashboardContext"
 import { MetricsCards } from "@/components/dashboard/metrics-cards"
 import { AgentGrid } from "@/components/agents/agent-grid"
+import { LoadingScreen } from "@/components/loading-screen"
+import { useAuth } from "@/hooks/useAuth"
+import { useRouter } from "next/navigation"
+import { Button } from "@/components/ui/button"
 
 const chartData = [
   { name: "Jan", value: 400, leads: 240, conversions: 120, disqualifiedLeads: 80, qualifiedLeads: 160 },
@@ -45,37 +49,13 @@ const itemVariants = {
   }
 }
 
-async function getOpenAICost(retries = 1): Promise<number> {
-  try {
-    const response = await fetch('/api/openai-cost')
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-    
-    const data = await response.json()
-    
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to fetch OpenAI cost')
-    }
-    
-    return data.total_cost
-  } catch (error) {
-    console.error('Error fetching OpenAI cost:', error)
-    
-    if (retries > 0) {
-      console.log(`Retrying... (${retries} attempts left)`)
-      await new Promise(resolve => setTimeout(resolve, 2000)) // Wait 2 seconds before retrying
-      return getOpenAICost(retries - 1)
-    }
-    
-    return 0 // Return 0 if all retries failed
-  }
-}
-
 export default function InicioPage() {
   const [hoveredCard, setHoveredCard] = useState<number | null>(null)
-  const [openAICost, setOpenAICost] = useState<number>(0)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isMounted, setIsMounted] = useState(false)
+  const [showInitializing, setShowInitializing] = useState(true)
+  const { user, loading } = useAuth()
+  const router = useRouter()
 
   const handleMouseEnter = (index: number) => {
     setHoveredCard(index)
@@ -92,28 +72,58 @@ export default function InicioPage() {
     { label: "Comprar mais Créditos", icon: CreditCard, href: "/perfil?tab=Plano" },
   ]
 
+  // Efeito para garantir que o componente só renderize no cliente
   useEffect(() => {
-    let isMounted = true
-
-    const fetchCost = async () => {
-      const cost = await getOpenAICost(2) // Allow 2 retries
-      if (isMounted) {
-        setOpenAICost(cost)
-      }
-    }
-
-    fetchCost()
-
-    return () => {
-      isMounted = false
-    }
+    setIsMounted(true)
+    
+    const timer = setTimeout(() => {
+      setIsLoading(false)
+    }, 300)
+    
+    return () => clearTimeout(timer)
   }, [])
+
+  // Efeito para verificar se é o primeiro acesso após o login
+  useEffect(() => {
+    if (!isMounted) return
+
+    // Verificar se é o primeiro acesso após o login
+    const isFirstAccess = sessionStorage.getItem('firstAccess') !== 'false'
+    
+    if (!isFirstAccess) {
+      setShowInitializing(false)
+    } else {
+      // Marcar que não é mais o primeiro acesso
+      sessionStorage.setItem('firstAccess', 'false')
+    }
+  }, [isMounted])
+
+  // Renderiza um estado vazio até que o componente esteja montado
+  if (!isMounted || loading) {
+    return null
+  }
+
+  // Verificar se o usuário está autenticado
+  if (!user) {
+    // O AuthGuard já vai redirecionar, mas esta é uma camada extra de segurança
+    router.push('/login')
+    return null
+  }
 
   return (
     <DashboardProvider>
+      <AnimatePresence>
+        {showInitializing && (
+          <LoadingScreen 
+            duration={3000}
+            onComplete={() => setShowInitializing(false)}
+          />
+        )}
+      </AnimatePresence>
+
       <motion.div
         initial="hidden"
-        animate="visible"
+        animate={isLoading || showInitializing ? "hidden" : "visible"}
         variants={containerVariants}
         className="min-h-screen bg-[#0A0A0B] p-6"
       >
@@ -238,13 +248,17 @@ export default function InicioPage() {
             className="space-y-6"
             variants={itemVariants}
           >
-            {/* N8N Agents Monitoring */}
-            <Card className="bg-[#0F0F10] border-[#272727]">
-              <CardHeader>
-                <CardTitle className="text-white">Status dos Agentes</CardTitle>
-                <CardDescription className="text-[#E8F3ED]/60">
-                  Monitoramento em tempo real dos Agentes de IA
-                </CardDescription>
+            {/* Agents Card */}
+            <Card className="bg-[#0F0F0F] border-[#272727]">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div className="space-y-1">
+                  <CardTitle className="text-lg font-medium text-white">
+                    Monitoramento em tempo real dos Agentes de IA
+                  </CardTitle>
+                  <CardDescription className="text-sm text-[#727272]">
+                    Seus agentes de IA estão operacionais e conectados
+                  </CardDescription>
+                </div>
               </CardHeader>
               <CardContent>
                 <AgentGrid />

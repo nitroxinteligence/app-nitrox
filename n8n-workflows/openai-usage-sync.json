@@ -1,0 +1,105 @@
+{
+  "name": "OpenAI Usage Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 4
+            }
+          ]
+        }
+      },
+      "name": "Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Script para extrair métricas de uso da OpenAI das execuções de workflows\n\n// Configurações\nconst SUPABASE_URL = process.env.SUPABASE_URL || $env.SUPABASE_URL;\nconst SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || $env.SUPABASE_SERVICE_KEY;\nconst N8N_API_URL = process.env.N8N_API_URL || $env.N8N_API_URL;\nconst N8N_API_KEY = process.env.N8N_API_KEY || $env.N8N_API_KEY;\n\n// Validar configurações\nif (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {\n  throw new Error('Configurações do Supabase ausentes (SUPABASE_URL, SUPABASE_SERVICE_KEY)');\n}\n\nif (!N8N_API_URL || !N8N_API_KEY) {\n  throw new Error('Configurações da API do n8n ausentes (N8N_API_URL, N8N_API_KEY)');\n}\n\n// Função para extrair custos da OpenAI de uma execução\nfunction extractOpenAICostsFromExecution(execution) {\n  const costs = [];\n  \n  try {\n    // Verificar se temos dados de resultado\n    if (!execution.data?.resultData?.runData) {\n      return costs;\n    }\n    \n    const runData = execution.data.resultData.runData;\n    \n    // Iterar sobre cada nó na execução\n    for (const nodeName in runData) {\n      if (!runData[nodeName] || !Array.isArray(runData[nodeName])) continue;\n      \n      // Iterar sobre cada execução do nó\n      for (let i = 0; i < runData[nodeName].length; i++) {\n        const nodeExecution = runData[nodeName][i];\n        \n        // Verificar se temos dados JSON\n        if (!nodeExecution.data?.json) continue;\n        \n        const json = nodeExecution.data.json;\n        \n        // Verificar se é uma resposta da OpenAI\n        const openAIInfo = getOpenAIInfo(json);\n        if (openAIInfo) {\n          const timestamp = execution.startedAt || execution.stoppedAt || execution.createdAt || new Date().toISOString();\n          costs.push({\n            ...openAIInfo,\n            timestamp,\n            executionId: execution.id,\n            nodeId: nodeName\n          });\n        }\n        \n        // Verificar em campos aninhados\n        ['request', 'response', 'data'].forEach(field => {\n          if (json[field] && typeof json[field] === 'object') {\n            const nestedInfo = getOpenAIInfo(json[field]);\n            if (nestedInfo) {\n              const timestamp = execution.startedAt || execution.stoppedAt || execution.createdAt || new Date().toISOString();\n              costs.push({\n                ...nestedInfo,\n                timestamp,\n                executionId: execution.id,\n                nodeId: nodeName\n              });\n            }\n          }\n        });\n      }\n    }\n  } catch (error) {\n    console.error(`Erro ao extrair custos da execução ${execution.id}:`, error);\n  }\n  \n  return costs;\n}\n\n// Função para identificar e extrair informações de uso da OpenAI\nfunction getOpenAIInfo(json) {\n  // Verificar padrões comuns de resposta da OpenAI\n  if (json.model && (json.usage || json.tokenUsage)) {\n    // Extrai informações de tokens\n    const usage = json.usage || json.tokenUsage || {};\n    const promptTokens = usage.prompt_tokens || usage.promptTokens || 0;\n    const completionTokens = usage.completion_tokens || usage.completionTokens || 0;\n    const totalTokens = usage.total_tokens || usage.totalTokens || (promptTokens + completionTokens);\n    \n    // Buscar o modelo e calcular o custo\n    const model = json.model.toLowerCase().trim();\n    const cost = calculateCost(model, promptTokens, completionTokens);\n    \n    return {\n      model,\n      promptTokens,\n      completionTokens,\n      totalTokens,\n      cost\n    };\n  }\n  \n  return null;\n}\n\n// Função para calcular o custo com base no modelo e tokens\nfunction calculateCost(model, promptTokens, completionTokens) {\n  // Tabela de custos por 1000 tokens (preços simplificados para os modelos mais comuns)\n  const pricing = {\n    'gpt-4': { prompt: 0.03, completion: 0.06 },\n    'gpt-4-32k': { prompt: 0.06, completion: 0.12 },\n    'gpt-4-turbo': { prompt: 0.01, completion: 0.03 },\n    'gpt-4-vision': { prompt: 0.01, completion: 0.03 },\n    'gpt-3.5-turbo': { prompt: 0.0015, completion: 0.002 },\n    'gpt-3.5-turbo-16k': { prompt: 0.003, completion: 0.004 },\n    'text-embedding-ada-002': { prompt: 0.0001, completion: 0.0001 },\n    'text-embedding-3-small': { prompt: 0.00002, completion: 0.00002 },\n    'text-embedding-3-large': { prompt: 0.00013, completion: 0.00013 }\n  };\n  \n  // Encontrar o preço correto usando correspondência parcial\n  let modelPricing;\n  for (const [key, price] of Object.entries(pricing)) {\n    if (model.includes(key)) {\n      modelPricing = price;\n      break;\n    }\n  }\n  \n  // Usar preço padrão se não encontrarmos correspondência\n  modelPricing = modelPricing || { prompt: 0.002, completion: 0.002 };\n  \n  // Calcular o custo total\n  const promptCost = (promptTokens / 1000) * modelPricing.prompt;\n  const completionCost = (completionTokens / 1000) * modelPricing.completion;\n  \n  return promptCost + completionCost;\n}\n\n// Função principal de execução\nasync function main() {\n  console.log('Iniciando sincronização de uso da OpenAI');\n  const stats = {\n    workflowsProcessed: 0,\n    executionsProcessed: 0,\n    recordsExtracted: 0,\n    recordsSaved: 0,\n    errors: 0\n  };\n  \n  try {\n    // 1. Buscar workflows com tag 'agent'\n    console.log('Buscando workflows...');\n    const workflowsResponse = await fetch(`${N8N_API_URL}/api/v1/workflows`, {\n      method: 'GET',\n      headers: {\n        'X-N8N-API-KEY': N8N_API_KEY,\n        'Accept': 'application/json'\n      }\n    });\n    \n    if (!workflowsResponse.ok) {\n      throw new Error(`Erro ao buscar workflows: ${workflowsResponse.status} ${workflowsResponse.statusText}`);\n    }\n    \n    const workflowsData = await workflowsResponse.json();\n    const workflows = workflowsData.data || [];\n    \n    // Filtrar workflows com tag 'agent'\n    const agentWorkflows = workflows.filter(wf => {\n      if (!wf.tags) return false;\n      \n      // Verificar se as tags incluem 'agent'\n      return wf.tags.some(tag => {\n        if (typeof tag === 'string') {\n          return tag.toLowerCase() === 'agent';\n        } else if (tag && typeof tag === 'object' && tag.name) {\n          return tag.name.toLowerCase() === 'agent';\n        }\n        return false;\n      });\n    });\n    \n    console.log(`Encontrados ${agentWorkflows.length} workflows com tag 'agent'`);\n    \n    // Listas para armazenar todos os registros a serem inseridos\n    const allRecords = [];\n    \n    // 2. Para cada workflow, buscar execuções e extrair métricas\n    for (const workflow of agentWorkflows) {\n      try {\n        console.log(`Processando workflow: ${workflow.name} (${workflow.id})`);\n        stats.workflowsProcessed++;\n        \n        // Buscar execuções dos últimos 3 dias (limitar a 50 para evitar sobrecarga)\n        const threeDbookago = new Date();\n        threeDbookago.setDate(threeDbookago.getDate() - 3);\n        \n        const executionsResponse = await fetch(\n          `${N8N_API_URL}/api/v1/executions?workflowId=${workflow.id}&` +\n          `lastId=&limit=50&firstId=&lastExecutionTime=${threeDbookago.toISOString()}`,\n          {\n            method: 'GET',\n            headers: {\n              'X-N8N-API-KEY': N8N_API_KEY,\n              'Accept': 'application/json'\n            }\n          }\n        );\n        \n        if (!executionsResponse.ok) {\n          throw new Error(`Erro ao buscar execuções: ${executionsResponse.status} ${executionsResponse.statusText}`);\n        }\n        \n        const executionsData = await executionsResponse.json();\n        const executions = executionsData.data || [];\n        \n        console.log(`Encontradas ${executions.length} execuções para o workflow ${workflow.name}`);\n        stats.executionsProcessed += executions.length;\n        \n        // Extrair métricas de cada execução\n        for (const execution of executions) {\n          const costs = extractOpenAICostsFromExecution(execution);\n          console.log(`Extraídas ${costs.length} métricas de uso da OpenAI da execução ${execution.id}`);\n          \n          stats.recordsExtracted += costs.length;\n          \n          // Preparar registros para inserção no Supabase\n          costs.forEach(cost => {\n            allRecords.push({\n              timestamp: cost.timestamp,\n              workflow_id: workflow.id,\n              workflow_name: workflow.name,\n              Model: cost.model, // Usando 'Model' com M maiúsculo para corresponder à coluna no banco de dados\n              endpoint: 'chat',\n              prompt_tokens: cost.promptTokens,\n              completion_tokens: cost.completionTokens,\n              total_tokens: cost.totalTokens,\n              estimated_cost: cost.cost,\n              request_id: `n8n_${execution.id}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,\n              tags: workflow.tags ? workflow.tags.map(t => typeof t === 'string' ? t : t.name) : [],\n              metadata: {\n                source: 'n8n_sync',\n                extracted_at: new Date().toISOString(),\n                execution_id: execution.id,\n                node_id: cost.nodeId,\n                workflow_active: workflow.active\n              },\n              // Não enviar user_id para evitar problemas de permissão\n              user_id: null\n            });\n          });\n        }\n      } catch (workflowError) {\n        console.error(`Erro ao processar workflow ${workflow.name}:`, workflowError);\n        stats.errors++;\n      }\n    }\n    \n    // 3. Inserir registros no Supabase em lotes (até 50 por vez)\n    if (allRecords.length > 0) {\n      console.log(`Inserindo ${allRecords.length} registros no Supabase`);\n      \n      // Função para dividir um array em partes\n      const chunk = (arr, size) => \n        Array.from({ length: Math.ceil(arr.length / size) }, (v, i) =>\n          arr.slice(i * size, i * size + size)\n        );\n      \n      // Dividir registros em lotes de 50\n      const batches = chunk(allRecords, 50);\n      \n      for (let i = 0; i < batches.length; i++) {\n        const batch = batches[i];\n        console.log(`Inserindo lote ${i+1}/${batches.length} (${batch.length} registros)`);\n        \n        try {\n          // Verificar servidor Supabase\n          console.log(`Enviando para ${SUPABASE_URL}/rest/v1/openai_usage`);\n          \n          const response = await fetch(`${SUPABASE_URL}/rest/v1/openai_usage`, {\n            method: 'POST',\n            headers: {\n              'Content-Type': 'application/json',\n              'apikey': SUPABASE_SERVICE_KEY,\n              'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,\n              'Prefer': 'resolution=merge-duplicates'\n            },\n            body: JSON.stringify(batch)\n          });\n          \n          if (!response.ok) {\n            const errorText = await response.text();\n            throw new Error(`Erro ao inserir registros: ${response.status} ${response.statusText} - ${errorText}`);\n          }\n          \n          stats.recordsSaved += batch.length;\n        } catch (insertError) {\n          console.error(`Erro ao inserir lote ${i+1}:`, insertError);\n          stats.errors++;\n        }\n      }\n      \n      // 4. Atualizar agregações diárias\n      try {\n        console.log('Atualizando agregações diárias...');\n        const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/update_openai_usage_aggregations`, {\n          method: 'POST',\n          headers: {\n            'Content-Type': 'application/json',\n            'apikey': SUPABASE_SERVICE_KEY,\n            'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`\n          }\n        });\n        \n        if (!response.ok) {\n          const errorText = await response.text();\n          console.warn(`Aviso: Não foi possível atualizar agregações: ${response.status} ${response.statusText} - ${errorText}`);\n        } else {\n          console.log('Agregações atualizadas com sucesso');\n        }\n      } catch (aggregationError) {\n        console.warn('Aviso: Erro ao atualizar agregações:', aggregationError);\n      }\n    } else {\n      console.log('Nenhum registro para inserir');\n    }\n    \n    console.log('Sincronização concluída com sucesso!');\n    console.log('Estatísticas:', stats);\n    \n    return { success: true, stats };\n  } catch (error) {\n    console.error('Erro na sincronização:', error);\n    return { success: false, error: error.message, stats };\n  }\n}\n\n// Executar e retornar o resultado\nreturn main();"
+      },
+      "name": "Sync OpenAI Usage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SERVICE_BASE_URL }}/api/webhooks/openai-usage-synced",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-webhook-secret",
+              "value": "={{ $env.WEBHOOK_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "success",
+              "value": "={{ $json.success }}"
+            },
+            {
+              "name": "stats",
+              "value": "={{ $json.stats }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Notify Service",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule": {
+      "main": [
+        [
+          {
+            "node": "Sync OpenAI Usage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sync OpenAI Usage": {
+      "main": [
+        [
+          {
+            "node": "Notify Service",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "tags": ["agent", "automation", "openai"],
+  "staticData": null,
+  "pinData": {}
+} 

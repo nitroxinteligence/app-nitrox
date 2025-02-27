@@ -1,0 +1,12 @@
+{
+  "name": "database-inspector",
+  "version": "1.0",
+  "description": "API para acesso automático a todos os dados do Supabase",
+  "memory": 256,
+  "timeout": 10,
+  "methods": ["GET", "POST", "OPTIONS"],
+  "environment": {
+    "SUPABASE_URL": "env:SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY": "env:SUPABASE_SERVICE_ROLE_KEY"
+  }
+} 

@@ -35,21 +35,31 @@ interface Metric {
 function MetricCard({ metric }: { metric: Metric }) {
   const { data, isLoading } = useDashboardContext()
   const [chartData, setChartData] = useState<MetricData[]>([])
+  const [isMounted, setIsMounted] = useState(false)
+  
+  // Garantir que o componente está montado no cliente
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
   
   // Process chart data
   useEffect(() => {
-    if (data.leadMetrics.length > 0) {
-      const today = new Date().toISOString().split('T')[0];
-      const todayData = data.leadMetrics.filter(record => 
-        new Date(record.date).toISOString().split('T')[0] === today
-      ).map(record => ({
-        date: new Date(record.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
-        value: record[metric.key] || 0
-      }));
+    if (!isMounted || !data.leadMetrics.length) return;
+    
+    const today = new Date().toISOString().split('T')[0];
+    const todayData = data.leadMetrics.filter(record => 
+      new Date(record.date).toISOString().split('T')[0] === today
+    ).map(record => ({
+      date: new Date(record.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
+      value: record[metric.key] || 0
+    }));
 
-      setChartData(todayData);
-    }
-  }, [data.leadMetrics, metric.key]);
+    setChartData(todayData);
+  }, [data.leadMetrics, metric.key, isMounted]);
+
+  if (!isMounted || isLoading || !data.leadMetrics.length) {
+    return <MetricSkeleton />
+  }
 
   // Get current value (today's metrics)
   const today = new Date().toISOString().split('T')[0];
@@ -67,10 +77,6 @@ function MetricCard({ metric }: { metric: Metric }) {
 
   const formattedValue = metric.valueFormatter(value)
   const changePercentage = previousValue ? ((value - previousValue) / previousValue) * 100 : 0
-
-  if (isLoading || !data.leadMetrics.length) {
-    return <MetricSkeleton />
-  }
 
   return (
     <div className="p-6 bg-[#0F0F0F] border border-[#272727] rounded-lg space-y-3 mb-6">
@@ -151,6 +157,13 @@ function MetricCard({ metric }: { metric: Metric }) {
 }
 
 export function MetricsCards() {
+  const [isMounted, setIsMounted] = useState(false)
+  
+  // Garantir que o componente está montado no cliente
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
+  
   const metrics: Metric[] = [
     {
       name: "Leads Capturados",
@@ -181,6 +194,10 @@ export function MetricsCards() {
       description: "Taxa de conversão do dia"
     }
   ]
+
+  if (!isMounted) {
+    return null
+  }
 
   return (
     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">

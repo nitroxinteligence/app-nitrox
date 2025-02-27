@@ -103,7 +103,6 @@ export function ProfileDropdown({ isOpen, onClose, anchor }: ProfileDropdownProp
   const handleLogout = async () => {
     try {
       await signOut()
-      toast.success('Logout realizado com sucesso!')
       onClose()
     } catch (error) {
       console.error('Erro ao fazer logout:', error)
@@ -148,10 +147,10 @@ export function ProfileDropdown({ isOpen, onClose, anchor }: ProfileDropdownProp
               <div className="border-t border-[#272727] p-2">
                 <button 
                   className="w-full flex items-center gap-3 p-2 text-white rounded-lg hover:bg-white/5 transition-colors text-[13px] cursor-pointer"
-                  onClick={handleItemClick(() => handleNavigation('/creditos'))}
+                  onClick={handleItemClick(() => handleNavigation('/monitoramento'))}
                 >
                   <CreditCard className="h-4 w-4" />
-                  Créditos
+                  Monitoramento
                 </button>
                 <button 
                   className="w-full flex items-center gap-3 p-2 text-white rounded-lg hover:bg-white/5 transition-colors text-[13px] cursor-pointer"

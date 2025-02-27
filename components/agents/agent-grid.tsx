@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Activity, Clock, Hash, AlertCircle } from 'lucide-react'
+import { Activity, Clock, Hash, AlertCircle, DollarSign, Zap } from 'lucide-react'
 import type { N8NAgent } from '@/types/n8n'
 import { n8nService } from '@/lib/n8n-service'
 import { Card, CardContent } from '@/components/ui/card'
@@ -36,6 +36,21 @@ function formatAgentName(name: string): string {
   }
   
   return `Agente IA - ${baseName}`
+}
+
+// Função para formatar valores monetários
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value);
+}
+
+// Função para formatar número de tokens
+function formatTokens(tokens: number): string {
+  return new Intl.NumberFormat('pt-BR').format(tokens);
 }
 
 function AgentCard({ agent }: { agent: N8NAgent }) {
@@ -86,6 +101,24 @@ function AgentCard({ agent }: { agent: N8NAgent }) {
                   {formatLastExecution(agent.lastExecution)}
                 </span>
               </div>
+            )}
+            {agent.openAI && agent.openAI.totalCost > 0 && (
+              <>
+                <div className="flex items-center gap-2 text-sm">
+                  <DollarSign className="h-4 w-4 text-[#58E877]" />
+                  <span className="text-[#E8F3ED]/60">Custo OpenAI:</span>
+                  <span className="font-medium text-white">
+                    {formatCurrency(agent.openAI.totalCost)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <Zap className="h-4 w-4 text-[#58E877]" />
+                  <span className="text-[#E8F3ED]/60">Tokens:</span>
+                  <span className="font-medium text-white">
+                    {formatTokens(agent.openAI.totalTokens)}
+                  </span>
+                </div>
+              </>
             )}
           </div>
         </CardContent>

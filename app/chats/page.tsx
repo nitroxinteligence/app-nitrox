@@ -62,9 +62,9 @@ export default function HubPage() {
       initial="hidden"
       animate="visible"
       variants={containerVariants}
-      className="relative min-h-screen w-full overflow-hidden bg-[#0A0A0B]"
+      className="relative min-h-screen w-full overflow-hidden bg-[#0A0A0B] m-0 p-0"
     >
-      <div className="mx-auto max-w-7xl px-4 pt-0 pb-0">
+      <div className="mx-auto max-w-7xl px-4 pt-0 pb-0 bg-[#0A0A0B]">
         <div className="relative rounded-2xl bg-[#0A0A0B]/40 backdrop-blur-xl">
           <div className="space-y-6 p-8">
             {/* Header Section */}

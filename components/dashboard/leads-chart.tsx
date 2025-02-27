@@ -41,9 +41,17 @@ export function LeadsChart() {
   const [isInitialLoading, setIsInitialLoading] = React.useState(true)
   const [isUpdating, setIsUpdating] = React.useState(false)
   const [selectedMetric, setSelectedMetric] = React.useState<string | null>(null)
+  const [isMounted, setIsMounted] = React.useState(false)
+
+  // Garantir que o componente está montado no cliente
+  React.useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   // Função para buscar dados do Supabase
   const fetchMetrics = React.useCallback(async (isInitial = false) => {
+    if (!isMounted) return;
+    
     try {
       if (isInitial) {
         setIsInitialLoading(true)
@@ -80,10 +88,12 @@ export function LeadsChart() {
         setIsUpdating(false)
       }
     }
-  }, [timeRange])
+  }, [timeRange, isMounted])
 
   // Efeito para buscar dados quando o componente montar
   React.useEffect(() => {
+    if (!isMounted) return;
+    
     fetchMetrics(true)
 
     // Configurar subscription em tempo real
@@ -101,14 +111,14 @@ export function LeadsChart() {
     return () => {
       subscription.unsubscribe()
     }
-  }, [])
+  }, [fetchMetrics, isMounted])
 
   // Efeito separado para atualizar dados quando timeRange mudar
   React.useEffect(() => {
-    if (!isInitialLoading) {
-      fetchMetrics(false)
-    }
-  }, [timeRange])
+    if (!isMounted || isInitialLoading) return;
+    
+    fetchMetrics(false)
+  }, [timeRange, fetchMetrics, isInitialLoading, isMounted])
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -139,22 +149,8 @@ export function LeadsChart() {
     return null
   }
 
-  if (isInitialLoading) {
-    return (
-      <Card className="w-full bg-[#0F0F10] border-[#272727]">
-        <CardHeader className="flex items-center gap-2 space-y-0 border-b border-[#272727] py-5 sm:flex-row">
-          <div className="grid flex-1 gap-1 text-center sm:text-left">
-            <CardTitle className="text-white">Evolução de Leads</CardTitle>
-            <CardDescription className="text-[#E8F3ED]/60">
-              Carregando dados...
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
-          <ChartSkeleton />
-        </CardContent>
-      </Card>
-    )
+  if (!isMounted || isInitialLoading) {
+    return null
   }
 
   // Show skeleton when there's no data
