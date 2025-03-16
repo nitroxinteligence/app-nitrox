@@ -123,28 +123,42 @@ export function MetricsDashboard() {
     churned_users: 0
   }
 
+  // Formatar dados para os gráficos com ajuste de fuso horário
+  const formatDateForDisplay = (dateString: string) => {
+    // Converter a string de data para um objeto Date considerando como UTC
+    // A data vem no formato ISO (YYYY-MM-DD) ou similar
+    const [year, month, day] = dateString.split(/[-T]/);
+    
+    // Criar uma data no fuso horário local do navegador
+    // Usamos ano, mês (0-11 em JS) e dia
+    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    
+    // Formatar usando toLocaleDateString para exibição consistente
+    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+  };
+
   // Formatar dados para os gráficos
   const chartData = data.leadMetrics.map(metric => ({
-    date: new Date(metric.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
+    date: formatDateForDisplay(metric.date),
     Leads: metric.total_leads || 0,
     Qualificados: metric.qualified_leads || 0,
     NaoQualificados: metric.unqualified_leads || 0
   }))
 
   const salesChartData = data.salesMetrics.map(metric => ({
-    date: new Date(metric.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
+    date: formatDateForDisplay(metric.date),
     conversao: metric.conversion_rate || 0,
     receita: (metric.revenue || 0) / 100
   }))
 
   const satisfactionData = data.satisfactionMetrics.map(metric => ({
-    date: new Date(metric.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
+    date: formatDateForDisplay(metric.date),
     NPS: metric.nps_score || 0,
     CSAT: metric.csat_score || 0
   }))
 
   const operationalEfficiencyData = data.operationalMetrics.map(metric => ({
-    date: new Date(metric.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
+    date: formatDateForDisplay(metric.date),
     Autoatendimento: metric.self_service_rate || 0,
     Fallback: metric.fallback_rate || 0,
     Erros: metric.technical_errors || 0,
@@ -152,7 +166,7 @@ export function MetricsDashboard() {
   }))
 
   const retentionData = data.retentionMetrics.map(metric => ({
-    date: new Date(metric.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
+    date: formatDateForDisplay(metric.date),
     TaxaRetorno: metric.return_rate * 100,
     ChurnRate: metric.churn_rate * 100,
     FrequenciaUso: metric.usage_frequency

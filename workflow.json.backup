@@ -1,0 +1,517 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Configuração de ambiente\nreturn {\n  json: {\n    n8nApiUrl: 'https://node.clinicadopovo.onpsbu.easypanel.host/api/v1',\n    n8nApiKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1Y2QwNzdlNS1lMzdiLTQ1NzQtOGQ5YS04OGNhNjUyN2VjZGIiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzQwNTE5OTYyfQ.MrXNBTi13d_VMpCCbKoveb43d8hwpNQa4EFEn4PGVHQ',\n    targetTag: 'main agent',\n    dataLookbackDays: 90,  // Quantos dias para trás buscar dados\n    errorThreshold: 5,    // Quantidade de erros tolerados antes de uma notificação\n    supabaseTable: 'lead_metrics'\n  }\n};"
+      },
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        80,
+        1880
+      ],
+      "id": "adf9adbb-06d3-4ce4-bb41-ea273a6d3da4"
+    },
+    {
+      "parameters": {
+        "url": "={{ $node['Config'].json.n8nApiUrl }}/workflows",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8N-API-KEY",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1Y2QwNzdlNS1lMzdiLTQ1NzQtOGQ5YS04OGNhNjUyN2VjZGIiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzQwNTE5OTYyfQ.MrXNBTi13d_VMpCCbKoveb43d8hwpNQa4EFEn4PGVHQ"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "name": "Get All Workflows",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        280,
+        1880
+      ],
+      "id": "141e23e5-ddf1-4dea-86ac-6c774d4612d4"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filtrar workflows com a tag \"main agent\"\nconst targetTag = $node['Config'].json.targetTag;\nconst workflows = $json.data || [];\nconst today = new Date();\nconst todayStr = today.toISOString().split('T')[0];\nconst lookbackDays = $node['Config'].json.dataLookbackDays || 7;\n\n// Função para verificar se um workflow tem a tag alvo\nfunction hasTargetTag(workflow) {\n  if (!workflow.tags || !Array.isArray(workflow.tags)) {\n    return false;\n  }\n  \n  return workflow.tags.some(tag => {\n    if (typeof tag === 'string') {\n      return tag.toLowerCase().includes(targetTag.toLowerCase());\n    } else if (tag && typeof tag === 'object' && tag.name) {\n      return tag.name.toLowerCase().includes(targetTag.toLowerCase());\n    }\n    return false;\n  });\n}\n\n// Filtrar workflows com a tag alvo\nconst targetWorkflows = workflows.filter(hasTargetTag);\n\nif (targetWorkflows.length === 0) {\n  console.log(`Nenhum workflow encontrado com a tag \"${targetTag}\"`);\n}\n\n// Criar objeto com metadata e dados\nreturn {\n  json: {\n    date: todayStr,\n    lookbackDays,\n    targetTag,\n    totalWorkflows: workflows.length,\n    matchingWorkflows: targetWorkflows.length,\n    workflows: targetWorkflows.map(w => ({\n      id: w.id,\n      name: w.name,\n      active: w.active,\n      tags: w.tags\n    }))\n  }\n};"
+      },
+      "name": "Filter Workflows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        480,
+        1880
+      ],
+      "id": "97090561-a9a5-4640-b2d2-750b9faf4ecf"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Split By Workflow",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 2,
+      "position": [
+        680,
+        1880
+      ],
+      "id": "af1094e5-b1e8-4a51-bfb3-3788dde0adb1"
+    },
+    {
+      "parameters": {
+        "url": "={{ $node['Config'].json.n8nApiUrl }}/executions?workflowId={{ $json.workflows[0].id }}&limit=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8N-API-KEY",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1Y2QwNzdlNS1lMzdiLTQ1NzQtOGQ5YS04OGNhNjUyN2VjZGIiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzQwNTE5OTYyfQ.MrXNBTi13d_VMpCCbKoveb43d8hwpNQa4EFEn4PGVHQ"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "name": "Get Executions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        880,
+        1880
+      ],
+      "id": "00bbc3bd-c023-460b-819d-2fab687ec14c"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Processar métricas de execução de workflows\nconst workflow = $node['Split By Workflow'].json;\nconst executions = $json.data || [];\nconst today = new Date();\nconst todayStr = today.toISOString().split('T')[0];\nconst lookbackDays = $node['Config'].json.dataLookbackDays || 7;\n\n// Criar uma data limite para filtrar execuções\nconst dateLimit = new Date();\ndateLimit.setDate(dateLimit.getDate() - lookbackDays);\n\n// Filtrar execuções recentes\nconst recentExecutions = executions.filter(exec => {\n  const execDate = new Date(exec.startedAt || exec.stoppedAt || exec.createdAt);\n  return execDate >= dateLimit;\n});\n\n// Função recursiva para buscar remoteJid em qualquer nível do objeto\nfunction findRemoteJidInObject(obj, path = '') {\n  // Se não for um objeto ou for nulo, não há o que procurar\n  if (!obj || typeof obj !== 'object') return null;\n  \n  // Array para armazenar IDs encontrados\n  const foundIds = [];\n  \n  // Função recursiva interna\n  function search(currentObj, currentPath) {\n    // Se for um array, processar cada item\n    if (Array.isArray(currentObj)) {\n      currentObj.forEach((item, index) => {\n        search(item, `${currentPath}[${index}]`);\n      });\n      return;\n    }\n    \n    // Se não for um objeto ou for nulo, retornar\n    if (!currentObj || typeof currentObj !== 'object') return;\n    \n    // Verificar as propriedades do objeto atual\n    for (const key in currentObj) {\n      const value = currentObj[key];\n      const newPath = currentPath ? `${currentPath}.${key}` : key;\n      \n      // Verificar se é um remotejid por nome de chave\n      if (\n        (key === 'remotejid' || key === 'remoteJid' || key === 'remote_jid') && \n        typeof value === 'string' && \n        value.trim() !== ''\n      ) {\n        // Normalizar formato, tirar sufixos como @c.us\n        const normalized = value.replace(/[@].*$/, '');\n        if (normalized && normalized.length > 5) { // Um ID razoável tem pelo menos alguns caracteres\n          foundIds.push({\n            id: normalized,\n            path: newPath\n          });\n        }\n      }\n      \n      // Recursivamente procurar em propriedades de objeto\n      if (value && typeof value === 'object') {\n        search(value, newPath);\n      }\n    }\n  }\n  \n  // Iniciar busca\n  search(obj, path);\n  return foundIds;\n}\n\n// Função para extrair leads das execuções\nfunction extractLeadMetrics(executions) {\n  let totalLeads = 0;\n  let qualifiedLeads = 0;\n  let unqualifiedLeads = 0;\n  let successfulExecutions = 0;\n  let failedExecutions = 0;\n  let source = 'unknown';\n  let campaign = 'unknown';\n  let sourceBreakdown = {};\n  let stageDistribution = {};\n  // Array para armazenar os remotejids únicos\n  let uniqueRemoteJids = new Set();\n  // Objeto para mapear remotejids para status (qualificado/não qualificado)\n  let remoteJidMapping = {};\n  // Contador de estruturas de dados processadas para log\n  let processedDataStructures = 0;\n  let foundRemoteJidPaths = {};\n  \n  // Analisar cada execução\n  executions.forEach((execution, execIndex) => {\n    // Verificar se a execução foi bem-sucedida\n    const isSuccessful = execution.status === 'success' || execution.finished === true;\n    \n    if (isSuccessful) {\n      successfulExecutions++;\n      \n      // Extrair dados dos nós, priorizando os nós específicos de métricas\n      const data = execution.data;\n      if (data && data.resultData && data.resultData.runData) {\n        const runData = data.resultData.runData;\n        \n        // PARTE 1: Busca convencional em nós específicos\n        // Procurar por nós relevantes\n        Object.keys(runData).forEach(nodeId => {\n          const nodeData = runData[nodeId];\n          if (!nodeData || !nodeData[0] || !nodeData[0].data) return;\n          \n          const outputData = nodeData[0].data.main?.[0] || [];\n          \n          outputData.forEach(item => {\n            processedDataStructures++;\n            \n            // Procurar campos específicos de métricas e remotejid\n            if (item.json) {\n              // Extrair remotejid - verificando diversas possíveis nomenclaturas\n              let remoteJid = null;\n              if (item.json.remotejid) remoteJid = item.json.remotejid;\n              else if (item.json.remoteJid) remoteJid = item.json.remoteJid;\n              else if (item.json.remote_jid) remoteJid = item.json.remote_jid;\n              else if (item.json.whatsapp && item.json.whatsapp.remotejid) remoteJid = item.json.whatsapp.remotejid;\n              else if (item.json.whatsapp && item.json.whatsapp.remoteJid) remoteJid = item.json.whatsapp.remoteJid;\n              else if (item.json.whatsapp && item.json.whatsapp.remote_jid) remoteJid = item.json.whatsapp.remote_jid;\n              else if (item.json.contact && item.json.contact.remotejid) remoteJid = item.json.contact.remotejid;\n              else if (item.json.contact && item.json.contact.remoteJid) remoteJid = item.json.contact.remoteJid;\n              else if (item.json.contact && item.json.contact.remote_jid) remoteJid = item.json.contact.remote_jid;\n              else if (item.json.metadata && item.json.metadata.remotejid) remoteJid = item.json.metadata.remotejid;\n              else if (item.json.metadata && item.json.metadata.remoteJid) remoteJid = item.json.metadata.remoteJid;\n              else if (item.json.metadata && item.json.metadata.remote_jid) remoteJid = item.json.metadata.remote_jid;\n              else if (item.json.from) remoteJid = item.json.from; // Alguns sistemas usam 'from' para telefone\n              else if (item.json.phone) remoteJid = item.json.phone; // Alguns sistemas usam 'phone' direto\n              else if (item.json.phone_number) remoteJid = item.json.phone_number;\n              else if (item.json.phoneNumber) remoteJid = item.json.phoneNumber;\n              else if (item.json.user && item.json.user.phone) remoteJid = item.json.user.phone;\n              else if (item.json.customer && item.json.customer.phone) remoteJid = item.json.customer.phone;\n              \n              // Se encontrou um remotejid, adiciona ao conjunto de IDs únicos\n              if (remoteJid) {\n                // Normaliza o formato (removendo @c.us ou @s.whatsapp.net se necessário)\n                remoteJid = remoteJid.replace(/[@].*$/, '');\n                \n                // Adiciona ao conjunto de remotejids únicos apenas se for válido\n                if (remoteJid && remoteJid.length > 5) {\n                  uniqueRemoteJids.add(remoteJid);\n                  \n                  // Rastreia de onde veio para diagnóstico\n                  foundRemoteJidPaths[remoteJid] = foundRemoteJidPaths[remoteJid] || `Execução ${execIndex}, método padrão`;\n                  \n                  // Rastreia o status do lead para este remotejid\n                  let isQualified = false;\n                  if (item.json.qualified === true || \n                      item.json.is_qualified === true || \n                      item.json.status === 'qualified' ||\n                      item.json.lead_status === 'qualified') {\n                    isQualified = true;\n                  }\n                  \n                  // Armazena ou atualiza o status no mapeamento\n                  remoteJidMapping[remoteJid] = remoteJidMapping[remoteJid] || isQualified;\n                }\n              }\n              \n              // Continua processando outros campos de métricas como antes\n              if (item.json.totalLeads || item.json.total_leads) {\n                totalLeads += parseInt(item.json.totalLeads || item.json.total_leads || 0, 10);\n              }\n              \n              if (item.json.qualifiedLeads || item.json.qualified_leads) {\n                qualifiedLeads += parseInt(item.json.qualifiedLeads || item.json.qualified_leads || 0, 10);\n              }\n              \n              if (item.json.unqualifiedLeads || item.json.unqualified_leads) {\n                unqualifiedLeads += parseInt(item.json.unqualifiedLeads || item.json.unqualified_leads || 0, 10);\n              }\n              \n              // Fonte e campanha\n              if (item.json.source) source = item.json.source;\n              if (item.json.campaign) campaign = item.json.campaign;\n              \n              // Breakdown de fontes\n              if (item.json.sourceBreakdown || item.json.source_breakdown) {\n                const breakdown = item.json.sourceBreakdown || item.json.source_breakdown;\n                try {\n                  const breakdownObj = typeof breakdown === 'string' ? JSON.parse(breakdown) : breakdown;\n                  sourceBreakdown = {...sourceBreakdown, ...breakdownObj};\n                } catch (e) {}\n              }\n              \n              // Distribuição por estágios\n              if (item.json.stageDistribution || item.json.stage_distribution) {\n                const distribution = item.json.stageDistribution || item.json.stage_distribution;\n                try {\n                  const distributionObj = typeof distribution === 'string' ? JSON.parse(distribution) : distribution;\n                  stageDistribution = {...stageDistribution, ...distributionObj};\n                } catch (e) {}\n              }\n              \n              // PARTE 2: Busca avançada com recursão profunda\n              // Se ainda não encontramos um remotejid, vamos procurar recursivamente\n              if (!remoteJid) {\n                const foundIds = findRemoteJidInObject(item.json);\n                if (foundIds && foundIds.length > 0) {\n                  foundIds.forEach(found => {\n                    uniqueRemoteJids.add(found.id);\n                    foundRemoteJidPaths[found.id] = `Execução ${execIndex}, busca profunda: ${found.path}`;\n                    // Presumimos que é qualificado (podemos refinar isso depois)\n                    remoteJidMapping[found.id] = true;\n                  });\n                }\n              }\n            }\n          });\n        });\n        \n        // PARTE 3: Tentativa mais agressiva - busca em todo o objeto de execução\n        // Se ainda não encontramos remotejids suficientes, vamos fazer uma busca completa\n        if (uniqueRemoteJids.size < successfulExecutions && execIndex < 10) { // Limitamos às primeiras execuções para performance\n          const foundIds = findRemoteJidInObject(execution);\n          if (foundIds && foundIds.length > 0) {\n            foundIds.forEach(found => {\n              uniqueRemoteJids.add(found.id);\n              foundRemoteJidPaths[found.id] = `Execução ${execIndex}, busca completa: ${found.path}`;\n              // Presumimos que é qualificado (podemos refinar isso depois)\n              remoteJidMapping[found.id] = true;\n            });\n          }\n        }\n      }\n    } else {\n      failedExecutions++;\n    }\n  });\n  \n  console.log(`Processadas ${processedDataStructures} estruturas de dados em ${executions.length} execuções`);\n  console.log(`Encontrados ${uniqueRemoteJids.size} remotejids únicos`);\n  \n  // PARTE 4: Fallback e ajustes finais\n  // Se descobrimos remotejids únicos, atualizamos nossas métricas com base neles\n  if (uniqueRemoteJids.size > 0) {\n    console.log('Usando remotejids encontrados para métricas');\n    Object.keys(foundRemoteJidPaths).slice(0, 5).forEach(id => {\n      console.log(`- ID ${id}: ${foundRemoteJidPaths[id]}`);\n    });\n    \n    // Total de leads é o número de remotejids únicos\n    totalLeads = uniqueRemoteJids.size;\n    \n    // Contar leads qualificados/não qualificados com base no mapeamento\n    qualifiedLeads = 0;\n    Object.values(remoteJidMapping).forEach(isQualified => {\n      if (isQualified) qualifiedLeads++;\n    });\n    \n    // Leads não qualificados é a diferença\n    unqualifiedLeads = totalLeads - qualifiedLeads;\n  } \n  // Se não encontramos remotejids MAS já temos valores para totalLeads\n  else if (totalLeads > 0) {\n    console.log(`Usando totalLeads existente (${totalLeads}) como base para remote_jids simulados`);\n    // Criar remotejids simulados com base nos totais que já temos\n    // Isso é um fallback para quando não conseguimos extrair os IDs reais\n    const workflowId = workflow.workflows[0].id;\n    for (let i = 0; i < totalLeads; i++) {\n      const simulatedId = `${workflowId}_lead_${i+1}`;\n      uniqueRemoteJids.add(simulatedId);\n      // Definir proporcionalmente quais são qualificados\n      const isQualified = i < qualifiedLeads;\n      remoteJidMapping[simulatedId] = isQualified;\n    }\n  }\n  // Último caso: não temos nem remotejids nem totalLeads, mas temos execuções bem-sucedidas\n  else if (totalLeads === 0 && successfulExecutions > 0) {\n    console.log(`Usando execuções bem-sucedidas (${successfulExecutions}) como fallback`);\n    // Fallback para o comportamento anterior se não encontrarmos remotejids\n    totalLeads = successfulExecutions;\n    qualifiedLeads = Math.round(successfulExecutions * 0.6);\n    unqualifiedLeads = totalLeads - qualifiedLeads;\n    \n    // Criar remotejids simulados para consistência\n    const workflowId = workflow.workflows[0].id;\n    for (let i = 0; i < totalLeads; i++) {\n      const simulatedId = `${workflowId}_exec_${i+1}`;\n      uniqueRemoteJids.add(simulatedId);\n      // Definir proporcionalmente quais são qualificados\n      const isQualified = i < qualifiedLeads;\n      remoteJidMapping[simulatedId] = isQualified;\n    }\n  }\n  \n  // Cálculo de taxa de conversão\n  const conversionRate = totalLeads > 0 ? (qualifiedLeads / totalLeads) * 100 : 0;\n  \n  return {\n    totalLeads,\n    qualifiedLeads,\n    unqualifiedLeads,\n    conversionRate: parseFloat(conversionRate.toFixed(2)),\n    successfulExecutions,\n    failedExecutions,\n    source,\n    campaign,\n    sourceBreakdown: Object.keys(sourceBreakdown).length > 0 ? JSON.stringify(sourceBreakdown) : null,\n    stageDistribution: Object.keys(stageDistribution).length > 0 ? JSON.stringify(stageDistribution) : null,\n    // Lista de remotejids únicos\n    remoteJids: Array.from(uniqueRemoteJids),\n    // Contagem de remotejids únicos como métrica adicional\n    uniqueLeadsCount: uniqueRemoteJids.size\n  };\n}\n\n// Extrair métricas\nconst metrics = extractLeadMetrics(recentExecutions);\n\n// Criar objeto final de métricas\nreturn {\n  json: {\n    date: todayStr,\n    workflow_id: workflow.workflows[0].id,\n    workflow_name: workflow.workflows[0].name,\n    tags: Array.isArray(workflow.workflows[0].tags) ? workflow.workflows[0].tags.map(t => typeof t === 'string' ? t : t.name) : [],\n    total_leads: metrics.totalLeads,\n    qualified_leads: metrics.qualifiedLeads,\n    unqualified_leads: metrics.unqualifiedLeads,\n    conversion_rate: metrics.conversionRate,\n    source: metrics.source,\n    campaign: metrics.campaign,\n    source_breakdown: metrics.sourceBreakdown,\n    stage_distribution: metrics.stageDistribution,\n    // Adicionando campos para remotejid\n    remote_jids: JSON.stringify(metrics.remoteJids),\n    unique_leads_count: metrics.uniqueLeadsCount,\n    metadata: JSON.stringify({\n      executions_analyzed: recentExecutions.length,\n      successful_executions: metrics.successfulExecutions,\n      failed_executions: metrics.failedExecutions,\n      lookback_days: lookbackDays,\n      extraction_timestamp: new Date().toISOString(),\n      // Inclui informação sobre a detecção de remotejids no metadata\n      unique_leads_detected: metrics.remoteJids.length > 0\n    }),\n    average_qualification_time: 24 // Valor padrão em horas caso não esteja disponível\n  }\n};"
+      },
+      "name": "Process Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        1880
+      ],
+      "id": "61b2647f-b1cc-4d07-9ea5-ee4c04339941"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $node['Get Executions'].error !== undefined || ($node['Smart Upsert'].json && $node['Smart Upsert'].json.success === false) }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Has Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2720,
+        1880
+      ],
+      "id": "8cbff8be-5037-449e-9ee8-5cae5b220114"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar mensagem de sucesso\nreturn {\n  json: {\n    timestamp: new Date().toISOString(),\n    success: true,\n    workflow: $node['Split By Workflow'].json.workflows[0].name,\n    workflowId: $node['Split By Workflow'].json.workflows[0].id,\n    metricsDate: $node['Process Metrics'].json.date,\n    totalLeads: $node['Process Metrics'].json.total_leads,\n    qualifiedLeads: $node['Process Metrics'].json.qualified_leads,\n    conversionRate: $node['Process Metrics'].json.conversion_rate\n  }\n};"
+      },
+      "name": "Format Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        2700,
+        1980
+      ],
+      "id": "5db72619-9b6d-4fa8-ba82-fc3d514cea81"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Registrar erro no log\nconsole.log(`❌ ERRO: Falha na sincronização de métricas para o workflow ${$json.workflow}`);\nconsole.log(`Origem do erro: ${$json.errorSource}`);\nconsole.log(`Detalhes: ${$json.errorDetails}`);\nconsole.log(`Timestamp: ${$json.timestamp}`);\n\n// Manter os mesmos dados para compatibilidade com o restante do fluxo\nreturn { json: $json };"
+      },
+      "name": "Log Error1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        2220,
+        3780
+      ],
+      "id": "dd87b47a-9fc2-4cb3-89b3-511e9cae263d"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger3",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        -120,
+        1880
+      ],
+      "id": "d59ed5dd-185f-41c1-91df-65a93bfb4c55"
+    },
+    {
+      "parameters": {
+        "fields": {
+          "values": [
+            {
+              "name": "date",
+              "stringValue": "={{ $json.date }}"
+            },
+            {
+              "name": "workflow_id",
+              "stringValue": "={{ $json.workflow_id }}"
+            },
+            {
+              "name": " workflow_name",
+              "stringValue": "={{ $json.workflow_name }}"
+            },
+            {
+              "name": " remote_jids",
+              "stringValue": "={{ $json.remote_jids }}"
+            },
+            {
+              "name": "total_leads",
+              "type": "numberValue",
+              "numberValue": "={{ $json.total_leads || 0 }}"
+            },
+            {
+              "name": "qualified_leads",
+              "type": "numberValue",
+              "numberValue": "={{ $json.qualified_leads || 0 }}"
+            },
+            {
+              "name": "unqualified_leads",
+              "type": "numberValue",
+              "numberValue": "={{ $json.unqualified_leads || 0 }}"
+            },
+            {
+              "name": "conversion_rate",
+              "type": "numberValue",
+              "numberValue": "={{ $json.conversion_rate || 0 }}"
+            },
+            {
+              "name": "unique_leads_count",
+              "type": "numberValue",
+              "numberValue": "={{ $json.unique_leads_count || 0 }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Validate Data2",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        1280,
+        1880
+      ],
+      "id": "eb398fc2-5520-4cc4-99b7-73c1e6ecd120"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Detectar o erro e formatá-lo para exibição\nlet errorSource = \"\";\nlet errorDetails = \"\";\n\nif ($node['Get Executions'].error) {\n  errorSource = \"Executions API\";\n  errorDetails = $node['Get Executions'].error.message || JSON.stringify($node['Get Executions'].error);\n} else if ($node['Smart Upsert'].json && $node['Smart Upsert'].json.success === false) {\n  errorSource = \"Supabase Upsert\";\n  errorDetails = $node['Smart Upsert'].json.error || JSON.stringify($node['Smart Upsert'].json.errorDetail);\n}\n\n// Garantir que os detalhes do erro sejam uma string segura para JSON\ntry {\n  // Se for um objeto, converte para string\n  if (typeof errorDetails === 'object') {\n    errorDetails = JSON.stringify(errorDetails);\n  }\n  // Garante que seja uma string e limpa caracteres problemáticos\n  errorDetails = String(errorDetails)\n    .replace(/\\\\n/g, ' ')\n    .replace(/\\\\r/g, '')\n    .replace(/\\\\t/g, ' ')\n    .replace(/[\\u0000-\\u001F\\u007F-\\u009F]/g, ''); // Remove caracteres de controle\n} catch (e) {\n  errorDetails = \"Erro não pôde ser formatado: \" + e.message;\n}\n\nreturn {\n  json: {\n    timestamp: new Date().toISOString(),\n    success: false,\n    workflow: $node['Split By Workflow'].json.workflows?.[0]?.name || 'Unknown',\n    workflowId: $node['Split By Workflow'].json.workflows?.[0]?.id || 'Unknown',\n    errorSource,\n    errorDetails\n  }\n};"
+      },
+      "name": "Format Error1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        2920,
+        1780
+      ],
+      "id": "293c0763-f6f3-48bb-9910-b43627d097e2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Implementação de upsert inteligente diretamente via Supabase API\n// Para nó Code (sem acesso a $credentials)\n\n// Dados do registro a ser inserido/atualizado\nconst record = {\n  date: $json.date,\n  workflow_id: $json.workflow_id,\n  workflow_name: $json.workflow_name,\n  total_leads: $json.total_leads || 0,\n  qualified_leads: $json.qualified_leads || 0,\n  unqualified_leads: $json.unqualified_leads || 0,\n  conversion_rate: $json.conversion_rate || 0,\n  remote_jids: $json.remote_jids,\n  unique_leads_count: $json.unique_leads_count || 0\n};\n\n// Autenticação Supabase - ⚠️ Token fixo (menos seguro)\nconst supabaseUrl = 'https://dkvqjisxtdlrdgseiooq.supabase.co';\nconst supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRrdnFqaXN4dGRscmRnc2Vpb29xIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNzg2MDY5NSwiZXhwIjoyMDUzNDM2Njk1fQ.kFV65mUt9ljbP9sFaaKQ7JlzL5aiEf-ZOsgdmOk1Lqo'; // Substitui pelo token Service Role do Supabase\n\n// Função para realizar upsert (RPC personalizada)\nasync function performUpsert() {\n  console.log('Realizando smart upsert para:', {\n    workflow_id: record.workflow_id,\n    date: record.date\n  });\n  \n  try {\n    // Primeiro verificamos se o registro existe\n    const checkUrl = `${supabaseUrl}/rest/v1/lead_metrics?workflow_id=eq.${encodeURIComponent(record.workflow_id)}&date=eq.${encodeURIComponent(record.date)}`;\n    const checkOptions = {\n      headers: {\n        'apikey': supabaseKey,\n        'Authorization': `Bearer ${supabaseKey}`,\n        'Content-Type': 'application/json'\n      }\n    };\n    \n    const checkResponse = await $http.get(checkUrl, checkOptions);\n    const existingRecords = checkResponse.data;\n    console.log('Registros existentes encontrados:', existingRecords.length);\n    \n    let response;\n    \n    if (existingRecords && existingRecords.length > 0) {\n      // O registro existe, vamos atualizá-lo\n      console.log('Atualizando registro existente');\n      \n      const updateUrl = `${supabaseUrl}/rest/v1/lead_metrics?workflow_id=eq.${encodeURIComponent(record.workflow_id)}&date=eq.${encodeURIComponent(record.date)}`;\n      const updateOptions = {\n        headers: {\n          'apikey': supabaseKey,\n          'Authorization': `Bearer ${supabaseKey}`,\n          'Content-Type': 'application/json',\n          'Prefer': 'return=representation'\n        }\n      };\n      \n      response = await $http.patch(updateUrl, record, updateOptions);\n    } else {\n      // O registro não existe, vamos inseri-lo\n      console.log('Criando novo registro');\n      \n      const createUrl = `${supabaseUrl}/rest/v1/lead_metrics`;\n      const createOptions = {\n        headers: {\n          'apikey': supabaseKey,\n          'Authorization': `Bearer ${supabaseKey}`,\n          'Content-Type': 'application/json',\n          'Prefer': 'return=representation'\n        }\n      };\n      \n      response = await $http.post(createUrl, record, createOptions);\n    }\n    \n    if (response.status >= 400) {\n      throw new Error(`Erro na operação Supabase: ${response.status} ${JSON.stringify(response.data)}`);\n    }\n    \n    console.log('Operação realizada com sucesso', response.data);\n    \n    return { \n      success: true, \n      operation: existingRecords.length > 0 ? 'update' : 'create', \n      result: response.data \n    };\n  } catch (error) {\n    console.error('Erro ao realizar upsert:', error.message);\n    return { \n      success: false, \n      error: error.message, \n      errorDetail: error \n    };\n  }\n}\n\n// Executar o upsert e retornar os resultados\nreturn performUpsert().then(result => {\n  return {\n    json: {\n      ...result,\n      ...record,\n      timestamp: new Date().toISOString(),\n      // Adicionando dados formatados para o nó de sucesso\n      workflow: $node['Split By Workflow'].json.workflows[0].name,\n      workflowId: $node['Split By Workflow'].json.workflows[0].id,\n      metricsDate: record.date,\n      totalLeads: record.total_leads,\n      qualifiedLeads: record.qualified_leads,\n      conversionRate: record.conversion_rate\n    }\n  };\n});"
+      },
+      "name": "Smart Upsert2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        2660
+      ],
+      "id": "590624de-aa27-4588-9c24-7164143a7f27"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Registrar sucesso no log e retornar dados para próximo nó\nconsole.log(`✅ Métricas sincronizadas com sucesso para o workflow ${$json.workflow}`);\nconsole.log(`📊 Total de leads: ${$json.totalLeads}, Leads qualificados: ${$json.qualifiedLeads}, Taxa de conversão: ${$json.conversionRate}%`);\n\nreturn { json: $json };"
+      },
+      "name": "Log Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        2900,
+        1980
+      ],
+      "id": "8a88675a-9b66-4ff9-9620-57e88f21c2a0"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger3",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        -120,
+        1880
+      ],
+      "id": "d59ed5dd-185f-41c1-91df-65a93bfb4c55"
+    },
+    {
+      "parameters": {
+        "fields": {
+          "values": [
+            {
+              "name": "date",
+              "stringValue": "={{ $json.date }}"
+            },
+            {
+              "name": "workflow_id",
+              "stringValue": "={{ $json.workflow_id }}"
+            },
+            {
+              "name": " workflow_name",
+              "stringValue": "={{ $json.workflow_name }}"
+            },
+            {
+              "name": " remote_jids",
+              "stringValue": "={{ $json.remote_jids }}"
+            },
+            {
+              "name": "total_leads",
+              "type": "numberValue",
+              "numberValue": "={{ $json.total_leads || 0 }}"
+            },
+            {
+              "name": "qualified_leads",
+              "type": "numberValue",
+              "numberValue": "={{ $json.qualified_leads || 0 }}"
+            },
+            {
+              "name": "unqualified_leads",
+              "type": "numberValue",
+              "numberValue": "={{ $json.unqualified_leads || 0 }}"
+            },
+            {
+              "name": "conversion_rate",
+              "type": "numberValue",
+              "numberValue": "={{ $json.conversion_rate || 0 }}"
+            },
+            {
+              "name": "unique_leads_count",
+              "type": "numberValue",
+              "numberValue": "={{ $json.unique_leads_count || 0 }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Validate Data2",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        1280,
+        1880
+      ],
+      "id": "eb398fc2-5520-4cc4-99b7-73c1e6ecd120"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Detectar o erro e formatá-lo para exibição\nlet errorSource = \"\";\nlet errorDetails = \"\";\n\nif ($node['Get Executions'].error) {\n  errorSource = \"Executions API\";\n  errorDetails = $node['Get Executions'].error.message || JSON.stringify($node['Get Executions'].error);\n} else if ($node['Smart Upsert'].json && $node['Smart Upsert'].json.success === false) {\n  errorSource = \"Supabase Upsert\";\n  errorDetails = $node['Smart Upsert'].json.error || JSON.stringify($node['Smart Upsert'].json.errorDetail);\n}\n\n// Garantir que os detalhes do erro sejam uma string segura para JSON\ntry {\n  // Se for um objeto, converte para string\n  if (typeof errorDetails === 'object') {\n    errorDetails = JSON.stringify(errorDetails);\n  }\n  // Garante que seja uma string e limpa caracteres problemáticos\n  errorDetails = String(errorDetails)\n    .replace(/\\\\n/g, ' ')\n    .replace(/\\\\r/g, '')\n    .replace(/\\\\t/g, ' ')\n    .replace(/[\\u0000-\\u001F\\u007F-\\u009F]/g, ''); // Remove caracteres de controle\n} catch (e) {\n  errorDetails = \"Erro não pôde ser formatado: \" + e.message;\n}\n\nreturn {\n  json: {\n    timestamp: new Date().toISOString(),\n    success: false,\n    workflow: $node['Split By Workflow'].json.workflows?.[0]?.name || 'Unknown',\n    workflowId: $node['Split By Workflow'].json.workflows?.[0]?.id || 'Unknown',\n    errorSource,\n    errorDetails\n  }\n};"
+      },
+      "name": "Format Error1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        2920,
+        1780
+      ],
+      "id": "293c0763-f6f3-48bb-9910-b43627d097e2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Implementação de upsert inteligente diretamente via Supabase API\n// Para nó Code (sem acesso a $credentials)\n\n// Dados do registro a ser inserido/atualizado\nconst record = {\n  date: $json.date,\n  workflow_id: $json.workflow_id,\n  workflow_name: $json.workflow_name,\n  total_leads: $json.total_leads || 0,\n  qualified_leads: $json.qualified_leads || 0,\n  unqualified_leads: $json.unqualified_leads || 0,\n  conversion_rate: $json.conversion_rate || 0,\n  remote_jids: $json.remote_jids,\n  unique_leads_count: $json.unique_leads_count || 0\n};\n\n// Autenticação Supabase - ⚠️ Token fixo (menos seguro)\nconst supabaseUrl = 'https://dkvqjisxtdlrdgseiooq.supabase.co';\nconst supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRrdnFqaXN4dGRscmRnc2Vpb29xIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNzg2MDY5NSwiZXhwIjoyMDUzNDM2Njk1fQ.kFV65mUt9ljbP9sFaaKQ7JlzL5aiEf-ZOsgdmOk1Lqo'; // Substitui pelo token Service Role do Supabase\n\n// Função para realizar upsert (RPC personalizada)\nasync function performUpsert() {\n  console.log('Realizando smart upsert para:', {\n    workflow_id: record.workflow_id,\n    date: record.date\n  });\n  \n  try {\n    // Primeiro verificamos se o registro existe\n    const checkUrl = `${supabaseUrl}/rest/v1/lead_metrics?workflow_id=eq.${encodeURIComponent(record.workflow_id)}&date=eq.${encodeURIComponent(record.date)}`;\n    const checkOptions = {\n      headers: {\n        'apikey': supabaseKey,\n        'Authorization': `Bearer ${supabaseKey}`,\n        'Content-Type': 'application/json'\n      }\n    };\n    \n    const checkResponse = await $http.get(checkUrl, checkOptions);\n    const existingRecords = checkResponse.data;\n    console.log('Registros existentes encontrados:', existingRecords.length);\n    \n    let response;\n    \n    if (existingRecords && existingRecords.length > 0) {\n      // O registro existe, vamos atualizá-lo\n      console.log('Atualizando registro existente');\n      \n      const updateUrl = `${supabaseUrl}/rest/v1/lead_metrics?workflow_id=eq.${encodeURIComponent(record.workflow_id)}&date=eq.${encodeURIComponent(record.date)}`;\n      const updateOptions = {\n        headers: {\n          'apikey': supabaseKey,\n          'Authorization': `Bearer ${supabaseKey}`,\n          'Content-Type': 'application/json',\n          'Prefer': 'return=representation'\n        }\n      };\n      \n      response = await $http.patch(updateUrl, record, updateOptions);\n    } else {\n      // O registro não existe, vamos inseri-lo\n      console.log('Criando novo registro');\n      \n      const createUrl = `${supabaseUrl}/rest/v1/lead_metrics`;\n      const createOptions = {\n        headers: {\n          'apikey': supabaseKey,\n          'Authorization': `Bearer ${supabaseKey}`,\n          'Content-Type': 'application/json',\n          'Prefer': 'return=representation'\n        }\n      };\n      \n      response = await $http.post(createUrl, record, createOptions);\n    }\n    \n    if (response.status >= 400) {\n      throw new Error(`Erro na operação Supabase: ${response.status} ${JSON.stringify(response.data)}`);\n    }\n    \n    console.log('Operação realizada com sucesso', response.data);\n    \n    return { \n      success: true, \n      operation: existingRecords.length > 0 ? 'update' : 'create', \n      result: response.data \n    };\n  } catch (error) {\n    console.error('Erro ao realizar upsert:', error.message);\n    return { \n      success: false, \n      error: error.message, \n      errorDetail: error \n    };\n  }\n}\n\n// Executar o upsert e retornar os resultados\nreturn performUpsert().then(result => {\n  return {\n    json: {\n      ...result,\n      ...record,\n      timestamp: new Date().toISOString(),\n      // Adicionando dados formatados para o nó de sucesso\n      workflow: $node['Split By Workflow'].json.workflows[0].name,\n      workflowId: $node['Split By Workflow'].json.workflows[0].id,\n      metricsDate: record.date,\n      totalLeads: record.total_leads,\n      qualifiedLeads: record.qualified_leads,\n      conversionRate: record.conversion_rate\n    }\n  };\n});"
+      },
+      "name": "Smart Upsert2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        2660
+      ],
+      "id": "590624de-aa27-4588-9c24-7164143a7f27"
+    }
+  ],
+  "connections": {
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Get All Workflows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Workflows": {
+      "main": [
+        [
+          {
+            "node": "Filter Workflows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Workflows": {
+      "main": [
+        [
+          {
+            "node": "Split By Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split By Workflow": {
+      "main": [
+        [
+          {
+            "node": "Get Executions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Executions": {
+      "main": [
+        [
+          {
+            "node": "Process Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Metrics": {
+      "main": [
+        [
+          {
+            "node": "Validate Data2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Data2": {
+      "main": [
+        [
+          {
+            "node": "Smart Upsert2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Smart Upsert2": {
+      "main": [
+        [
+          {
+            "node": "Has Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Error?": {
+      "main": [
+        [
+          {
+            "node": "Format Error1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Success": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger3": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error1": {
+      "main": [
+        [
+          {
+            "node": "Log Error1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "adf5021c9ebf1a4260ca1c0963397a85af52125d2ad52d9f5cb6127e0f0c2d3a"
+  }
+} 

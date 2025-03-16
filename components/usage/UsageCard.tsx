@@ -20,6 +20,7 @@ interface UsageCardProps {
     label: string
   }
   className?: string
+  valueClassName?: string
 }
 
 export default function UsageCard({
@@ -29,7 +30,8 @@ export default function UsageCard({
   icon,
   progress,
   trend,
-  className
+  className,
+  valueClassName
 }: UsageCardProps) {
   // Determinar a cor da barra de progresso baseada no percentual
   const getProgressColor = (percent: number) => {
@@ -61,9 +63,9 @@ export default function UsageCard({
         <CardContent className="p-5 space-y-4">
           <div className="flex justify-between items-start">
             <div>
-              <h3 className="text-sm font-medium text-[#afafaf] mb-1">{title}</h3>
+              <h3 className="text-sm font-medium text-[#adadad] mb-1">{title}</h3>
               <div className="flex items-end space-x-1">
-                <div className="text-2xl font-bold text-white">{value}</div>
+                <div className={cn("text-2xl font-bold text-white", valueClassName)}>{value}</div>
                 {trend && (
                   <div 
                     className={cn(
@@ -81,7 +83,7 @@ export default function UsageCard({
                 )}
               </div>
               {description && (
-                <p className="text-xs text-[#afafaf] mt-1">{description}</p>
+                <p className="text-xs text-[#878787] mt-1">{description}</p>
               )}
             </div>
             {icon && (
@@ -94,7 +96,7 @@ export default function UsageCard({
           {progress && (
             <div className="space-y-1">
               <div className="flex justify-between items-center text-xs">
-                <span className="text-[#afafaf]">Utilizado</span>
+                <span className="text-[#878787]">Utilizado</span>
                 <span className={cn(
                   percent > 90 ? "text-red-400" : 
                   percent > 70 ? "text-gray-300" : 

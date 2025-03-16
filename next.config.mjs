@@ -19,6 +19,18 @@ const nextConfig = {
   experimental: {
     webpackBuildWorker: true
   },
+  async rewrites() {
+    return [
+      {
+        source: '/api/n8n/:path*',
+        destination: 'https://node.clinicadopovo.onpsbu.easypanel.host/api/:path*',
+      },
+      {
+        source: '/cron/metrics',
+        destination: '/api/cron/update-lead-metrics',
+      },
+    ];
+  },
 }
 
 mergeConfig(nextConfig, userConfig)

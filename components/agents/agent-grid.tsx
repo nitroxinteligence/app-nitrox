@@ -53,6 +53,25 @@ function formatTokens(tokens: number): string {
   return new Intl.NumberFormat('pt-BR').format(tokens);
 }
 
+// Função para formatar a data da última execução
+function formatLastExecution(date: Date | undefined) {
+  if (!date) return 'Nunca executado';
+  
+  // Verificar se a data é inválida (como 1970-01-01, que indica timestamp 0 ou erro)
+  // ou é uma data muito antiga (usada como valor padrão em algumas implementações)
+  if (date.getFullYear() < 2020) {
+    return 'Data indisponível';
+  }
+  
+  // Usar o formatDistanceToNow para formatar a data relativa
+  try {
+    return `Há ${formatDistanceToNow(date, { locale: ptBR, addSuffix: false })}`;
+  } catch (error) {
+    console.error("Erro ao formatar data:", error, date);
+    return 'Data indisponível';
+  }
+}
+
 function AgentCard({ agent }: { agent: N8NAgent }) {
   const statusColors = {
     online: 'bg-[#58E877]',
@@ -60,10 +79,10 @@ function AgentCard({ agent }: { agent: N8NAgent }) {
     error: 'bg-orange-500'
   }
 
-  const formatLastExecution = (date: Date | undefined) => {
-    if (!date) return 'Nunca executado'
-    return `Há ${formatDistanceToNow(date, { locale: ptBR, addSuffix: false })}`
-  }
+  // Verificar se o número de execuções hoje está definido
+  const executionsToday = agent.executionsToday !== undefined 
+    ? agent.executionsToday 
+    : 0;
 
   return (
     <motion.div
@@ -86,22 +105,13 @@ function AgentCard({ agent }: { agent: N8NAgent }) {
               <span className="text-[#E8F3ED]/60">Status:</span>
               <span className="font-medium text-white capitalize">{agent.status}</span>
             </div>
-            {agent.executionCount !== undefined && (
-              <div className="flex items-center gap-2 text-sm">
-                <Hash className="h-4 w-4 text-[#58E877]" />
-                <span className="text-[#E8F3ED]/60">Execuções:</span>
-                <span className="font-medium text-white">{agent.executionCount}</span>
-              </div>
-            )}
-            {agent.lastExecution && (
-              <div className="flex items-center gap-2 text-sm">
-                <Clock className="h-4 w-4 text-[#58E877]" />
-                <span className="text-[#E8F3ED]/60">Última execução:</span>
-                <span className="font-medium text-white">
-                  {formatLastExecution(agent.lastExecution)}
-                </span>
-              </div>
-            )}
+            <div className="flex items-center gap-2 text-sm">
+              <Clock className="h-4 w-4 text-[#58E877]" />
+              <span className="text-[#E8F3ED]/60">Última execução:</span>
+              <span className="font-medium text-white">
+                {formatLastExecution(agent.lastExecution)}
+              </span>
+            </div>
             {agent.openAI && agent.openAI.totalCost > 0 && (
               <>
                 <div className="flex items-center gap-2 text-sm">
@@ -137,28 +147,67 @@ export function AgentGrid() {
       setLoading(true)
       setError(null)
       
-      console.log('Fetching workflows...')
-      const workflows = await n8nService.getWorkflows()
-      console.log('Workflows received:', workflows)
+      console.log('Iniciando busca de agentes...')
       
-      console.log('Getting agent status...')
-      const agentsData = await n8nService.getAgentStatus(workflows)
-      console.log('Agents data:', agentsData)
+      // Get workflows with agent tags specifically
+      console.log('Buscando workflows com tag "agent"...')
+      const agentWorkflows = await n8nService.getAgentWorkflows()
       
-      setAgents(agentsData)
+      if (!agentWorkflows || !agentWorkflows.length) {
+        console.warn('⚠️ Nenhum workflow com tag "agent" encontrado!')
+        setLoading(false)
+        setError('Nenhum agente encontrado. Verifique se seus workflows estão marcados com a tag "agent".')
+        return
+      }
+      
+      console.log(`Recebidos ${agentWorkflows.length} workflows com tag "agent"`)
+      
+      // Obter o status e as execuções dos agentes
+      console.log('Obtendo status dos agentes...')
+      const agentsData = await n8nService.getAgentStatus(agentWorkflows)
+      
+      if (!agentsData || !agentsData.length) {
+        console.warn('⚠️ Nenhum agente processado!')
+        setLoading(false)
+        setError('Erro ao processar agentes. Verifique o console para mais detalhes.')
+        return
+      }
+      
+      console.log(`Processados ${agentsData.length} agentes com sucesso`)
+      
+      // Verificar novamente se algum workflow perdeu a tag "agent" após a atualização
+      // Isso garante que o card Monitoramento em Tempo Real seja atualizado dinamicamente
+      const updatedAgentWorkflows = await n8nService.getAgentWorkflows()
+      const updatedWorkflowIds = new Set(updatedAgentWorkflows.map(wf => wf.id))
+      
+      // Filtrar apenas os agentes que ainda possuem a tag "agent"
+      const filteredAgents = agentsData.filter(agent => updatedWorkflowIds.has(agent.id))
+      
+      if (filteredAgents.length < agentsData.length) {
+        console.log(`Removidos ${agentsData.length - filteredAgents.length} agentes que não possuem mais a tag "agent"`)
+      }
+      
+      // Atualizar o estado com os agentes processados e filtrados
+      setAgents(filteredAgents)
+      setLoading(false)
     } catch (error) {
-      console.error('Error fetching agents:', error)
-      setError('Erro ao carregar os agentes')
-    } finally {
+      console.error('Erro ao buscar agentes:', error)
+      setError('Erro ao carregar os agentes. Verifique o console para mais detalhes.')
       setLoading(false)
     }
   }
 
+  // Efeito para buscar dados quando o componente montar
   useEffect(() => {
+    console.log('Buscando dados de agentes...')
     fetchAgents()
     
-    // Atualizar a cada 30 segundos
-    const interval = setInterval(fetchAgents, 30000)
+    // Atualizar a cada 1 minuto para garantir dados recentes
+    const interval = setInterval(() => {
+      console.log('Atualizando dados dos agentes automaticamente...')
+      fetchAgents()
+    }, 60000) // A cada 1 minuto
+    
     return () => clearInterval(interval)
   }, [])
 

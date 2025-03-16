@@ -25,7 +25,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-black/80 backdrop-blur-sm border border-white/10 p-3 rounded-lg shadow-lg text-white">
-        <p className="text-xs text-gray-400 mb-1">{label}</p>
+        <p className="text-xs text-[#adadad] mb-1">{label}</p>
         {payload.map((entry: any, index: number) => (
           <div key={`tooltip-${index}`} className="flex justify-between items-center gap-3">
             <div className="flex items-center gap-1">
@@ -70,7 +70,7 @@ export default function UsageChart({ data, title, description }: UsageChartProps
           <div>
             {title && <h3 className="text-lg font-medium text-white">{title}</h3>}
             {description && (
-              <p className="text-sm text-gray-400">{description}</p>
+              <p className="text-sm text-[#adadad]">{description}</p>
             )}
           </div>
         )}
@@ -79,8 +79,8 @@ export default function UsageChart({ data, title, description }: UsageChartProps
             size="sm"
             variant={chartView === 'cost' ? 'default' : 'outline'}
             className={chartView === 'cost' 
-              ? "bg-[#272727] text-white border-[#272727] hover:bg-[#272727]/80" 
-              : "bg-transparent text-[#777777] border-[#272727] hover:bg-[#272727]/50"}
+              ? "bg-[#272727] text-white border-gray-700 hover:bg-[#272727]/80" 
+              : "bg-transparent text-[#adadad] border-gray-700 hover:bg-[#272727]/50"}
             onClick={() => setChartView('cost')}
           >
             <DollarSign className="h-4 w-4 mr-1" />
@@ -90,8 +90,8 @@ export default function UsageChart({ data, title, description }: UsageChartProps
             size="sm"
             variant={chartView === 'tokens' ? 'default' : 'outline'}
             className={chartView === 'tokens' 
-              ? "bg-[#272727] text-white border-[#272727] hover:bg-[#272727]/80" 
-              : "bg-transparent text-[#777777] border-[#272727] hover:bg-[#272727]/50"}
+              ? "bg-[#272727] text-white border-gray-700 hover:bg-[#272727]/80" 
+              : "bg-transparent text-[#adadad] border-gray-700 hover:bg-[#272727]/50"}
             onClick={() => setChartView('tokens')}
           >
             <Zap className="h-4 w-4 mr-1" />
@@ -105,7 +105,7 @@ export default function UsageChart({ data, title, description }: UsageChartProps
           <CardContent className="p-4 flex items-center gap-3">
             <DollarSign className="h-5 w-5 text-[#58E877]" />
             <div>
-              <p className="text-xs text-gray-400">Custo Total</p>
+              <p className="text-xs text-[#adadad]">Custo Total</p>
               <p className="text-lg font-medium text-white">
                 R$ {totalCost.toFixed(2)}
               </p>
@@ -116,7 +116,7 @@ export default function UsageChart({ data, title, description }: UsageChartProps
           <CardContent className="p-4 flex items-center gap-3">
             <Zap className="h-5 w-5 text-[#58E877]" />
             <div>
-              <p className="text-xs text-gray-400">Tokens Totais</p>
+              <p className="text-xs text-[#adadad]">Tokens Totais</p>
               <p className="text-lg font-medium text-white">
                 {totalTokens.toLocaleString()}
               </p>

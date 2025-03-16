@@ -10,6 +10,7 @@ import { ExportMetricsButton } from "@/components/dashboard/export-metrics-butto
 import { DateRange } from "react-day-picker"
 import { Button } from "@/components/ui/button"
 import { Download } from "lucide-react"
+import { UpdateMetricsButton } from "@/components/dashboard/update-metrics-button"
 
 const metricsInformation = {
   Métricas: {
@@ -70,6 +71,7 @@ function MetricsContent() {
                 </h1>
                 <div className="flex items-center gap-4">
                   <DateFilter onDateRangeChange={handleDateRangeChange} />
+                  <UpdateMetricsButton className="bg-gradient-to-r from-[#1E1E1E] to-[#272727] hover:from-[#272727] hover:to-[#323232]" />
                   <Button
                     onClick={() => exportMetrics(selectedDateRange)}
                     className="bg-[#1E1E1E] hover:bg-[#272727] text-white border border-[#272727] transition-colors"
@@ -79,7 +81,12 @@ function MetricsContent() {
                   </Button>
                 </div>
               </div>
-              <p className="max-w-2xl text-[#E8F3ED]/60 text-lg font-normal">{description}</p>
+              <p className="max-w-2xl text-[#E8F3ED]/60 text-lg font-normal">
+                {description}{" "}
+                <span className="text-[#58E877]/80 text-sm">
+                  Use o botão "Atualizar Métricas" para extrair dados mais recentes do N8N.
+                </span>
+              </p>
             </motion.div>
 
             <motion.div 

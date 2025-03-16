@@ -32,6 +32,8 @@ export interface N8NAgent {
   lastUpdate: Date
   workflowId?: string
   executionCount?: number
+  executions?: any[] // Execuções brutas do workflow
+  executionsToday?: number // Número de execuções do dia atual
   lastExecution?: Date
   averageExecutionTime?: number
   openAI?: OpenAICost

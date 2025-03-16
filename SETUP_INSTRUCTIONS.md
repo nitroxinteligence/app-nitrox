@@ -70,7 +70,7 @@ As migrações criadas anteriormente já configuram isso corretamente.
 
 ### 3.2. Exibição de Dados na Interface
 
-A página `/creditos` usa o hook `useOpenAIUsage` para:
+A página `/monitoramento` usa o hook `useOpenAIUsage` para:
 
 1. Buscar dados do Supabase
 2. Formatar e preparar visualizações
@@ -106,7 +106,7 @@ curl -X POST http://localhost:3000/api/n8n/sync-usage
 2. Configure as variáveis de ambiente no arquivo `.env.local`
 3. Execute o script `scripts/setup-n8n-env.sh` para configurar o N8N
 4. Verifique se o workflow "OpenAI Usage Sync" está ativo no N8N
-5. Teste a sincronização manual pela interface em `/creditos`
+5. Teste a sincronização manual pela interface em `/monitoramento`
 
 ## 6. Manutenção
 

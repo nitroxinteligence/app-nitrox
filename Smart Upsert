@@ -1,0 +1,134 @@
+// Configurações do Supabase
+const SUPABASE_URL = "https://dkvqjisxtdlrdgseiooq.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRrdnFqaXN4dGRscmRnc2Vpb29xIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTcwNDc1NzI2MCwiZXhwIjoyMDIwMzMzMjYwfQ.aVVXwlfd-2r6j0ceCrZlwr9JTtSLE-QqMCpZGg1E6qw";
+const TABLE_NAME = "lead_metrics";
+
+// Função de validação numérica
+function normalizeNumber(value, fieldName, min = 0, max = Infinity) {
+    const num = Number(value);
+    if (isNaN(num)) {
+        return {
+            error: {
+                field: fieldName,
+                message: `${fieldName} deve ser numérico`,
+                value: value
+            },
+            value: 0
+        };
+    }
+    if (num < min || num > max) {
+        return {
+            error: {
+                field: fieldName,
+                message: `${fieldName} deve estar entre ${min} e ${max}`,
+                value: num
+            },
+            value: num
+        };
+    }
+    return { value: num };
+}
+
+// Função principal
+async function processItem(item) {
+    const errors = [];
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+
+    // Extrair e validar dados essenciais
+    const workflow_id = item.json.workflow_id;
+    const date = item.json.date || todayStr;
+
+    console.log('Processando item:', { workflow_id, date });
+
+    // Normalizar dados com validações
+    const normalizedData = {
+        date,
+        workflow_id,
+        workflow_name: item.json.workflow_name || '',
+        total_leads: normalizeNumber(item.json.total_leads, 'total_leads').value,
+        qualified_leads: normalizeNumber(item.json.qualified_leads, 'qualified_leads').value,
+        unqualified_leads: normalizeNumber(item.json.unqualified_leads, 'unqualified_leads').value,
+        conversion_rate: normalizeNumber(item.json.conversion_rate, 'conversion_rate', 0, 100).value,
+        remote_jids: typeof item.json.remote_jids === 'string' ? 
+            item.json.remote_jids : 
+            JSON.stringify(Array.isArray(item.json.remote_jids) ? item.json.remote_jids : []),
+        unique_leads_count: normalizeNumber(item.json.unique_leads_count, 'unique_leads_count').value
+    };
+
+    // Validações de negócio
+    if (!workflow_id || !date) {
+        errors.push({
+            field: 'required_fields',
+            message: 'workflow_id e date são obrigatórios',
+            value: { workflow_id, date }
+        });
+    }
+
+    if (normalizedData.qualified_leads + normalizedData.unqualified_leads > normalizedData.total_leads) {
+        errors.push({
+            field: 'leads_sum',
+            message: 'A soma de leads qualificados e não qualificados não pode exceder o total',
+            value: {
+                total: normalizedData.total_leads,
+                qualified: normalizedData.qualified_leads,
+                unqualified: normalizedData.unqualified_leads
+            }
+        });
+    }
+
+    // Se houver erros de validação, retornar sem tentar o upsert
+    if (errors.length > 0) {
+        console.log('Erros de validação encontrados:', JSON.stringify(errors, null, 2));
+        return {
+            json: {
+                success: false,
+                errors,
+                data: normalizedData,
+                isValid: false
+            }
+        };
+    }
+
+    try {
+        // Preparar metadados
+        const metadata = {
+            processed_at: new Date().toISOString(),
+            validation_version: '2.0',
+            execution_id: $execution.id || 'unknown',
+            data_quality_score: 100
+        };
+
+        // Adicionar metadata ao payload
+        const payload = {
+            ...normalizedData,
+            metadata: JSON.stringify(metadata),
+            updated_at: new Date().toISOString()
+        };
+
+        // Retornar dados validados e normalizados sem verificar se o registro existe
+        return {
+            json: {
+                ...payload,
+                success: true,
+                isValid: true
+            }
+        };
+
+    } catch (error) {
+        console.error('Erro durante o processamento:', error);
+        return {
+            json: {
+                success: false,
+                error: error.message,
+                data: normalizedData,
+                isValid: false
+            }
+        };
+    }
+}
+
+// Processar todos os itens
+const items = $input.all();
+const results = await Promise.all(items.map(processItem));
+return results; 

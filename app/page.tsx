@@ -16,6 +16,7 @@ import { LoadingScreen } from "@/components/loading-screen"
 import { useAuth } from "@/hooks/useAuth"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
 
 const chartData = [
   { name: "Jan", value: 400, leads: 240, conversions: 120, disqualifiedLeads: 80, qualifiedLeads: 160 },
@@ -109,6 +110,44 @@ export default function InicioPage() {
     router.push('/login')
     return null
   }
+
+  const handleSyncCompletionsData = async () => {
+    try {
+      setIsLoading(true);
+      toast.info('Sincronizando dados da OpenAI...', { id: 'sync-data' });
+      await syncCompletionsData();
+      toast.success('Dados sincronizados com sucesso!', { id: 'sync-data' });
+    } catch (error) {
+      console.error('❌ Erro ao sincronizar dados de completions:', error);
+      
+      // Extrair mensagem de erro mais detalhada da API quando disponível
+      let errorMessage = error instanceof Error ? error.message : 'Erro de conexão com a API';
+      let errorDescription = 'Verifique a conexão ou tente novamente mais tarde.';
+      
+      // Tentar extrair informações mais detalhadas de erros da OpenAI
+      if (errorMessage.includes('OpenAI') || errorMessage.includes('API')) {
+        try {
+          // Tentar extrair o JSON do erro da OpenAI se estiver presente
+          const openaiErrorMatch = errorMessage.match(/\{[\s\S]*\}/);
+          if (openaiErrorMatch) {
+            const errorJson = JSON.parse(openaiErrorMatch[0]);
+            if (errorJson.error && errorJson.error.message) {
+              errorDescription = `Erro da OpenAI: ${errorJson.error.message}`;
+            }
+          }
+        } catch (e) {
+          console.warn('Não foi possível extrair detalhes do erro da OpenAI:', e);
+        }
+      }
+      
+      toast.error('Erro ao sincronizar dados de completions', {
+        id: 'sync-data',
+        description: errorDescription
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <DashboardProvider>

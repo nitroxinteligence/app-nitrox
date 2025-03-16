@@ -70,7 +70,11 @@ export function Sidebar({ onExpandChange }: SidebarProps) {
                     href={item.href}
                     className={cn(
                       "nav-item w-full h-10 flex items-center rounded-lg focus:outline-none focus-visible:outline-none overflow-hidden whitespace-nowrap gap-3",
-                      pathname === item.href
+                      (pathname === item.href || 
+                       (item.href === "/chats" && (pathname.startsWith("/chats") || pathname.startsWith("/chat/"))) ||
+                       (item.href === "/metricas" && pathname.startsWith("/metricas")) ||
+                       (item.href === "/crm" && pathname.startsWith("/crm")) ||
+                       (item.href === "/conversas" && pathname.startsWith("/conversas")))
                         ? "bg-gradient-to-b from-[#262529] to-[#0A0A0B] text-[#58E877] border border-transparent border-t-[#39383C] border-b-[#16161B]"
                         : "text-[#adadad] hover:text-white hover:bg-[#1a1a1c]",
                       isExpanded ? "justify-start px-4" : "justify-center",
@@ -99,7 +103,7 @@ export function Sidebar({ onExpandChange }: SidebarProps) {
                 onClick={() => setShowProfileDropdown(!showProfileDropdown)}
                 className={cn(
                   "nav-item w-full h-10 flex items-center rounded-lg focus:outline-none focus-visible:outline-none overflow-hidden whitespace-nowrap gap-3",
-                  showProfileDropdown
+                  (showProfileDropdown || pathname === "/monitoramento" || pathname.startsWith("/monitoramento/"))
                     ? "bg-gradient-to-b from-[#262529] to-[#0A0A0B] text-[#58E877] border border-transparent border-t-[#39383C] border-b-[#16161B]"
                     : "text-[#adadad] hover:text-white hover:bg-[#1a1a1c]",
                   isExpanded ? "justify-start px-4" : "justify-center",

@@ -39,19 +39,9 @@ function formatModelName(model: string): { name: string, description: string, co
       description: 'Modelo mais avançado para diversas tarefas multimodais',
       color: 'bg-gray-300'
     },
-    'gpt-4o-mini': { 
-      name: 'GPT-4o Mini', 
-      description: 'Modelo otimizado GPT-4o com custo reduzido',
-      color: 'bg-gray-300'
-    },
     'gpt-4-turbo': { 
       name: 'GPT-4 Turbo', 
       description: 'Modelo otimizado com alto desempenho e custo reduzido',
-      color: 'bg-gray-400'
-    },
-    'gpt-4-vision': { 
-      name: 'GPT-4 Vision', 
-      description: 'Modelo capaz de processar imagens e texto',
       color: 'bg-gray-400'
     },
     'gpt-4': { 
@@ -64,50 +54,28 @@ function formatModelName(model: string): { name: string, description: string, co
       description: 'Modelo rápido e eficiente para tarefas gerais',
       color: 'bg-gray-500'
     },
-    'text-embedding-ada': { 
+    'text-embedding-ada-002': { 
       name: 'Embeddings Ada', 
       description: 'Modelo para gerar embeddings de textos',
       color: 'bg-gray-400'
     },
-    'text-embedding-3-': { 
-      name: 'Embeddings V3', 
-      description: 'Nova geração de modelo para embeddings de texto',
-      color: 'bg-gray-400'
-    },
-    'dall-e-': { 
-      name: 'DALL-E', 
+    'dall-e-3': { 
+      name: 'DALL-E 3', 
       description: 'Modelo para geração de imagens a partir de texto',
-      color: 'bg-gray-300'
-    },
-    'whisper-': { 
-      name: 'Whisper', 
-      description: 'Modelo de reconhecimento de fala para transcrição de áudio',
       color: 'bg-gray-300'
     }
   };
 
-  // Verificar se o modelo está no mapa (correspondência parcial)
+  // Verificar se o modelo está no mapa
   for (const key of Object.keys(modelMap)) {
     if (model.toLowerCase().includes(key.toLowerCase())) {
-      const baseName = modelMap[key].name;
-      // Para modelos com versão, adicionar a versão se disponível
-      if (model.includes('-') && !key.endsWith('-')) {
-        const parts = model.split('-');
-        const version = parts[parts.length - 1];
-        if (/^\d/.test(version)) { // Se a versão começa com um número
-          return {
-            ...modelMap[key],
-            name: `${baseName} (${version})`
-          };
-        }
-      }
       return modelMap[key];
     }
   }
 
-  // Modelo não encontrado, retornar valores padrão formatados
+  // Modelo não encontrado, retornar valores padrão
   return { 
-    name: model.toUpperCase(), 
+    name: model, 
     description: 'Modelo da OpenAI',
     color: 'bg-gray-600'
   };
@@ -207,7 +175,7 @@ export default function ModelUsageTable({ models }: ModelUsageTableProps) {
         <Button 
           variant="outline" 
           size="sm"
-          className="flex gap-2 bg-transparent text-[#afafaf] border-[#222224] hover:bg-[#222224] hover:text-white"
+          className="flex gap-2 bg-transparent text-gray-300 border-[#222224] hover:bg-[#222224] hover:text-white"
           onClick={exportToCsv}
         >
           <Download className="h-4 w-4" />
@@ -261,7 +229,7 @@ export default function ModelUsageTable({ models }: ModelUsageTableProps) {
                     <TooltipTrigger asChild>
                       <div className="flex items-center justify-end">
                         Custo/1K
-                        <Lightbulb className="ml-2 h-4 w-4 text-[#afafaf]" />
+                        <Lightbulb className="ml-2 h-4 w-4 text-[#adadad]" />
                       </div>
                     </TooltipTrigger>
                     <TooltipContent className="bg-black/80 border-[#222224]">
@@ -275,7 +243,7 @@ export default function ModelUsageTable({ models }: ModelUsageTableProps) {
           <TableBody>
             {sortedModels.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-[#afafaf]">
+                <TableCell colSpan={5} className="h-24 text-center text-[#adadad]">
                   Nenhum modelo encontrado.
                 </TableCell>
               </TableRow>

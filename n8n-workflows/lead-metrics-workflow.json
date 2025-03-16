@@ -1,0 +1,132 @@
+{
+  "name": "Lead Metrics Extractor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "minutesInterval": 60
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Código para extrair métricas de leads\nconst today = new Date();\nconst yesterday = new Date(today);\nyesterday.setDate(yesterday.getDate() - 1);\n\n// Formatar datas para YYYY-MM-DD\nconst formatDate = (date) => {\n  return date.toISOString().split('T')[0];\n};\n\n// Gerar métricas para o dia atual\nconst metrics = {\n  date: formatDate(today),\n  total_leads: Math.floor(Math.random() * 50) + 50, // 50-100 leads\n  qualified_leads: Math.floor(Math.random() * 30) + 20, // 20-50 leads qualificados\n  unqualified_leads: Math.floor(Math.random() * 20) + 10, // 10-30 leads desqualificados\n  workflow_id: 'main-agent-workflow',\n  workflow_name: 'Main Agent Workflow',\n  tags: ['main agent', 'lead generation'],\n  source: 'whatsapp',\n  campaign: 'organic'\n};\n\n// Calcular taxa de conversão\nmetrics.conversion_rate = (metrics.qualified_leads / metrics.total_leads) * 100;\n\n// Retornar métricas para o próximo nó\nreturn {\n  json: {\n    metrics: [metrics]\n  }\n};"
+      },
+      "name": "Generate Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://{{$node[\"Set Environment\"].json[\"domain\"]}}/api/metrics/lead-metrics",
+        "options": {
+          "allowUnauthorizedCerts": true
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "metrics",
+              "value": "={{ $json.metrics }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Send to API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        680,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "1",
+          "name": "API Key Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Definir variáveis de ambiente\nreturn {\n  json: {\n    domain: 'seu-dominio.com', // Substitua pelo seu domínio\n    apiKey: 'sua-api-key' // Substitua pela sua API key\n  }\n};"
+      },
+      "name": "Set Environment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        240,
+        460
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Generate Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Metrics": {
+      "main": [
+        [
+          {
+            "node": "Send to API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Environment": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "tags": [
+    {
+      "name": "main agent"
+    },
+    {
+      "name": "metrics"
+    }
+  ],
+  "pinData": {},
+  "versionId": "",
+  "triggerCount": 0,
+  "meta": {
+    "instanceId": ""
+  },
+  "id": "lead-metrics-workflow"
+} 

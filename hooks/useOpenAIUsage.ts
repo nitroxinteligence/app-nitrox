@@ -1,846 +1,1038 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import { OpenAIUsageSummary } from '@/lib/openai-tracker'
+import { processCompletionsData } from '@/lib/openai-completions-service'
+
+// Preços por modelo (em USD por 1000 tokens)
+const MODEL_PRICING = {
+  // GPT-4o
+  'gpt-4o': { input: 0.005, output: 0.015 },
+  'gpt-4o-mini': { input: 0.00015, output: 0.0006 },
+  
+  // GPT-4
+  'gpt-4-turbo': { input: 0.01, output: 0.03 },
+  'gpt-4': { input: 0.03, output: 0.06 },
+  'gpt-4-32k': { input: 0.06, output: 0.12 },
+  'gpt-4-vision': { input: 0.01, output: 0.03 },
+  
+  // GPT-3.5
+  'gpt-3.5-turbo': { input: 0.0005, output: 0.0015 },
+  'gpt-3.5-turbo-16k': { input: 0.001, output: 0.002 },
+  
+  // Fallback para outros modelos
+  'default': { input: 0.01, output: 0.03 }
+};
 
 export interface OpenAIUsageHookResult {
   usageData: OpenAIUsageSummary | null
   isLoading: boolean
   error: string | null
   refreshData: () => Promise<void>
-  syncWithSupabase: () => Promise<void>
+  syncCompletionsData: () => Promise<void>
+  syncCostData: () => Promise<void>
+  syncTodayData: () => Promise<void>
   exportData: () => Promise<void>
 }
 
-interface OpenAITokenUsage {
-  workflowId: string
-  workflowName: string
-  model: string
-  totalTokens: number
-  totalCost: number
-  totalCalls: number
-  date: string
+// Interface para dados de completions
+interface CompletionsUsageData {
+  byDate: any[];
+  byModel: any[];
+  total: {
+    input_tokens: number;
+    output_tokens: number;
+    input_cached_tokens: number;
+    input_audio_tokens: number;
+    output_audio_tokens: number;
+    requests: number;
+    efficiency: number;
+  };
+  dailyStats?: {
+    input_tokens: number;
+    output_tokens: number;
+    input_cached_tokens: number;
+    output_audio_tokens: number;
+    requests: number;
+    efficiency: number;
+    totalCost?: number;
+  };
+  costEstimates?: {
+    daily: number;
+    last24h: number;
+    last7days: number;
+    last30days: number;
+    byModel: { [key: string]: number };
+  };
+  actualCosts?: {
+    byDate: {
+      date: string;
+      amount_value: number;
+      amount_currency: string;
+    }[];
+    total: number;
+    last7days: number;
+    last30days: number;
+  };
 }
 
-// Interfaces adicionais para tipar os dados do Supabase
-interface OpenAIUsageDailyItem {
-  date: string
-  model: string
-  total_tokens: number
-  estimated_cost: string | number
-  request_count: number
-}
-
-interface OpenAIUsageSummaryItem {
-  model: string
-  total_tokens: number
-  prompt_tokens: number
-  completion_tokens: number
-  estimated_cost: string | number
-  request_count: number
-}
-
-interface OpenAIWorkflowUsageItem {
-  workflow_id: string
-  workflow_name: string
-  Model: string
-  total_tokens: number
-  estimated_cost: string | number
-}
-
-interface DailyUsageItem {
-  date: string
-  amount: number
-  totalTokens: number
-}
-
-interface ModelUsageItem {
-  model: string
-  cost: number
-  tokens: number
-  requests: number
-}
-
-// Interface para estatísticas por workflow
-interface WorkflowStat {
+// Interface para resultados por modelo
+interface ModelResult {
   name: string;
-  executions: number;
-  tokens: number;
-  cost: number;
-  calls: number;
-  lastExecuted?: string;
-  model: string;
-  costPer1K: number;
+  input_tokens: number;
+  output_tokens: number;
+  input_cached_tokens: number;
+  requests: number;
+  efficiency: number;
 }
 
+// Interface para resultados por data
+interface DateResult {
+  date: string;
+  input_tokens: number;
+  output_tokens: number;
+  input_cached_tokens: number;
+  requests: number;
+}
+
+// Interface para custos por data
+interface CostResult {
+  date: string;
+  amount_value: number;
+  amount_currency: string;
+}
+
+// Definir o tipo OpenAIUsageSummary com propriedades opcionais para resolver erros de tipagem
 interface OpenAIUsageSummary {
-  currentMonthCost: number;
-  previousMonthCost: number;
-  percentChange: number;
-  modelUsage: ModelUsageItem[];
-  dailyUsage: DailyUsageItem[];
-  costByAgent: Record<string, { cost: number, tokens: number }>;
-  subscription: {
-    usageLimit: number;
-    remainingCredits: number;
-  };
-  dailyAverage: {
-    amount: number;
-    percentOfLimit: number;
-  };
-  workflowStats: Record<string, WorkflowStat>;
-  dailySummary: {
-    total_calls: number;
-    total_requests: number;
-    total_cost: number;
-    total_tokens: number;
-    update_date: Date | string;
-  };
+  subscription?: { usageLimit: number; remainingCredits: number; } | null;
+  currentMonth?: { startDate: string; endDate: string; percentChange: number; } | null;
+  currentMonthTotal?: number;
+  previousMonth?: { startDate: string; endDate: string; percentChange: number; } | null;
+  previousMonthTotal?: number;
+  months?: any[];
+  completionsUsage?: CompletionsUsageData;
 }
 
-// Dados padrão para quando não há informações do Supabase
-const DEFAULT_USAGE_DATA: OpenAIUsageSummary = {
-  currentMonthCost: 0,
-  previousMonthCost: 0,
-  percentChange: 0,
-  modelUsage: [],
-  dailyUsage: [],
-  costByAgent: {},
-  subscription: {
-    usageLimit: 100,
-    remainingCredits: 100
-  },
-  dailyAverage: {
-    amount: 0,
-    percentOfLimit: 0
-  },
-  workflowStats: {},
-  dailySummary: {
-    total_calls: 0,
-    total_requests: 0,
-    total_cost: 0,
-    total_tokens: 0,
-    update_date: new Date()
-  }
-};
+// Chave para armazenar os dados no localStorage
+const STORAGE_KEY = 'siaflow_completions_data';
+const STORAGE_TIMESTAMP_KEY = 'siaflow_completions_last_updated';
+
+// Tempo máximo que consideramos os dados em cache válidos (10 minutos em milissegundos)
+const CACHE_MAX_AGE = 10 * 60 * 1000;
 
 /**
- * Hook para buscar dados de uso da OpenAI diretamente das tabelas Supabase
+ * Hook para buscar dados de uso da OpenAI
  */
-export default function useOpenAIUsage(): OpenAIUsageHookResult {
+export default function useOpenAIUsage(apiKey?: string): OpenAIUsageHookResult {
   const [usageData, setUsageData] = useState<OpenAIUsageSummary | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [supabaseClient, setSupabaseClient] = useState<SupabaseClient | null>(null)
-  const requestInProgress = useRef(false)
-  const [syncError, setSyncError] = useState<string | null>(null)
+  const [syncInProgress, setSyncInProgress] = useState(false)
+  const [costSyncInProgress, setCostSyncInProgress] = useState(false)
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
+  const initialDataLoaded = useRef(false)
 
   // Inicializar o cliente Supabase
   useEffect(() => {
-    try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    
-      if (!supabaseUrl || !supabaseKey) {
-        console.warn('Configuração do Supabase não encontrada nas variáveis de ambiente');
-        setError('Configuração do Supabase não encontrada');
-        return;
+    // Remover a inicialização do Supabase
+
+    // Tentar carregar dados do localStorage na inicialização
+    if (!initialDataLoaded.current) {
+      try {
+        const storedDataStr = localStorage.getItem(STORAGE_KEY);
+        const storedTimestampStr = localStorage.getItem(STORAGE_TIMESTAMP_KEY);
+        
+        if (storedDataStr && storedTimestampStr) {
+          const storedData = JSON.parse(storedDataStr);
+          const storedTimestamp = parseInt(storedTimestampStr);
+          const now = Date.now();
+          
+          // Verificar se os dados em cache ainda são válidos (menos de 10 minutos)
+          if (now - storedTimestamp < CACHE_MAX_AGE) {
+            console.log('📋 Carregando dados em cache do localStorage...');
+            setUsageData(storedData);
+          } else {
+            console.log('🕒 Dados em cache expirados, será necessário buscar dados novos');
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ Erro ao carregar dados do localStorage:', e);
+        // Não fazemos nada, apenas continuamos com o fluxo normal
       }
       
-      const client = createClient(supabaseUrl, supabaseKey)
-      setSupabaseClient(client)
-      console.log('Cliente Supabase inicializado com sucesso');
-    } catch (err) {
-      console.error('Erro ao inicializar cliente Supabase:', err);
-      setError('Falha ao inicializar conexão com Supabase');
+      initialDataLoaded.current = true;
     }
   }, [])
 
-  /**
-   * Função especializada para buscar dados detalhados de workflows
-   */
-  const fetchWorkflowData = useCallback(async (thirtyDaysAgo: Date) => {
-    if (!supabaseClient) {
-      console.warn('fetchWorkflowData: Cliente Supabase não disponível');
-      return { workflowStats: {}, costByAgent: {} };
-    }
+  // Função para criar uma estrutura de dados vazia para completions
+  const createEmptyCompletionsData = () => {
+    console.log('🔍 Criando estrutura de dados vazia para completions...');
     
-    console.log('Buscando dados detalhados de workflows do Supabase');
-    
+    return {
+      byDate: [],
+      byModel: [],
+      total: {
+        input_tokens: 0,
+        output_tokens: 0,
+        input_cached_tokens: 0,
+        input_audio_tokens: 0,
+        output_audio_tokens: 0,
+        requests: 0,
+        efficiency: 0
+      }
+    };
+  };
+
+  // Função auxiliar para calcular a eficiência
+  const calculateEfficiency = (input: number, output: number): number => {
+    if (!input || input === 0) return 0;
+    return Math.round((output / input) * 100);
+  };
+
+  // Função para obter estatísticas apenas do dia atual - modificada para não usar Supabase
+  const getCurrentDayCompletionsData = async () => {
     try {
-      // Primeiro, tentar buscar da nova tabela workflow_daily_summary
-      let workflowStats: Record<string, WorkflowStat> = {};
-      let costByAgent: Record<string, { cost: number, tokens: number }> = {};
+      console.log('🔍 Criando estrutura vazia para dados do dia atual...');
       
-      try {
-        const { data: summaryData, error: summaryError } = await supabaseClient
-          .from('workflow_daily_summary')
-          .select('*')
-          .gte('date', thirtyDaysAgo.toISOString().split('T')[0])
-          .order('date', { ascending: false });
-        
-        if (!summaryError && summaryData && summaryData.length > 0) {
-          console.log(`Encontrados ${summaryData.length} registros na tabela workflow_daily_summary`);
-          
-          // Agrupar por workflow_id para ter o total dos últimos 30 dias
-          const workflowGroups: Record<string, any[]> = {};
-          
-          summaryData.forEach(item => {
-            const workflowId = item.workflow_id || 'unknown';
-            if (!workflowGroups[workflowId]) {
-              workflowGroups[workflowId] = [];
-            }
-            workflowGroups[workflowId].push(item);
-          });
-          
-          // Processar cada workflow com os dados resumidos
-          Object.entries(workflowGroups).forEach(([workflowId, records]) => {
-            if (!records || records.length === 0) return;
-            
-            const workflowName = records[0].workflow_name || `Workflow ${workflowId}`;
-            const lastRecord = records[0]; // O primeiro registro é o mais recente
-            
-            // Somar valores de todos os dias para este workflow
-            const totalTokens = records.reduce((sum, record) => sum + (record.total_tokens || 0), 0);
-            const totalCost = records.reduce((sum, record) => sum + parseFloat(record.total_cost || 0), 0);
-            const totalCalls = records.reduce((sum, record) => sum + (record.total_calls || 0), 0);
-            const totalExecutions = records.reduce((sum, record) => sum + (record.total_requests || 0), 0);
-            
-            // Extrair modelo dominante se existir na lista de modelos usados
-            let dominantModel = 'unknown';
-            if (lastRecord.models_used) {
-              const models = lastRecord.models_used.split(',').map(m => m.trim());
-              if (models.length > 0) {
-                // Usar o primeiro modelo como dominante (geralmente o mais usado)
-                dominantModel = models[0];
-              }
-            }
-            
-            // Adicionar às estatísticas
-            workflowStats[workflowId] = {
-              name: workflowName,
-              executions: totalExecutions,
-              tokens: totalTokens,
-              cost: totalCost,
-              calls: totalCalls,
-              lastExecuted: lastRecord.updated_at,
-              model: dominantModel,
-              costPer1K: totalTokens > 0 ? (totalCost / totalTokens) * 1000 : 0
-            };
-            
-            // Adicionar ao resumo por agente
-            costByAgent[workflowName] = {
-              cost: totalCost,
-              tokens: totalTokens
-            };
-          });
-          
-          console.log(`Processados ${Object.keys(workflowStats).length} workflows da tabela resumo`);
-          
-          // Se encontramos dados na tabela de resumo, podemos retornar agora
-          if (Object.keys(workflowStats).length > 0) {
-            return { workflowStats, costByAgent };
-          }
-        }
-      } catch (err) {
-        console.warn('Erro ao tentar buscar da tabela workflow_daily_summary:', err);
-        console.log('Continuando com o método padrão de busca...');
-      }
-      
-      // Fallback: buscar dados diretamente da tabela openai_usage se a tabela de resumo não existir ou estiver vazia
-      const { data: workflowData, error: workflowError } = await supabaseClient
-        .from('openai_usage')
-        .select('workflow_id, workflow_name, model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, timestamp, request_id, tags')
-        .gte('timestamp', thirtyDaysAgo.toISOString())
-        .order('timestamp', { ascending: false });
-      
-      if (workflowError) {
-        console.error('Erro ao buscar dados por workflow:', workflowError);
-        return { workflowStats: {}, costByAgent: {} };
-      }
-      
-      if (!workflowData || workflowData.length === 0) {
-        console.log('Nenhum dado de workflow encontrado');
-        return { workflowStats: {}, costByAgent: {} };
-      }
-      
-      console.log(`Processando ${workflowData.length} registros de workflow da tabela principal`);
-      
-      // Filtrar apenas workflows com tags específicas (agent ou nodes específicos)
-      const validWorkflows = workflowData.filter(item => {
-        if (!item.tags) return false;
-        
-        // Verificar se o item tem a tag 'agent' ou qualquer um dos nodes específicos
-        const tags = Array.isArray(item.tags) 
-          ? item.tags 
-          : (typeof item.tags === 'object' ? Object.values(item.tags) : []);
-        
-        return tags.some(tag => 
-          tag === 'agent' || 
-          tag === 'AI Agent' || 
-          tag === 'OpenAI Chat Model' || 
-          tag === 'OpenAI'
-        );
-      });
-      
-      console.log(`Encontrados ${validWorkflows.length} registros com tags válidas (agent, AI Agent, OpenAI Chat Model, OpenAI)`);
-      
-      // Mapear workflows por ID para garantir dados individuais
-      const requestsByWorkflow: Record<string, Set<string>> = {};
-      
-      // Agrupar registros por workflow_id para calcular estatísticas individuais
-      const workflowGroups: Record<string, any[]> = {};
-      
-      // Primeiro, agrupamos todos os registros por workflow_id
-      validWorkflows.forEach(item => {
-        const workflowId = item.workflow_id || 'unknown';
-        if (!workflowGroups[workflowId]) {
-          workflowGroups[workflowId] = [];
-        }
-        workflowGroups[workflowId].push(item);
-      });
-      
-      console.log(`Agrupados ${Object.keys(workflowGroups).length} workflows distintos`);
-      
-      // Para cada workflow, processamos seus dados individualmente
-      Object.entries(workflowGroups).forEach(([workflowId, records]) => {
-        if (!records || records.length === 0) return;
-        
-        const workflowName = records[0].workflow_name || `Workflow ${workflowId}`;
-        
-        // Inicializar estatísticas para este workflow
-        workflowStats[workflowId] = {
-          name: workflowName,
-          executions: 0,
-          tokens: 0,
-          cost: 0,
-          calls: 0,
-          model: '', // Será definido abaixo
-          costPer1K: 0 // Será calculado depois
-        };
-        
-        requestsByWorkflow[workflowId] = new Set();
-        
-        // Determinar o modelo mais usado para este workflow e contar o uso de cada node
-        const modelCounts: Record<string, number> = {};
-        const nodeCounts: Record<string, { 
-          calls: number,
-          tokens: number,
-          cost: number
-        }> = {};
-        
-        records.forEach(item => {
-          const model = item.model || 'unknown';
-          modelCounts[model] = (modelCounts[model] || 0) + 1;
-          
-          // Contar uso por tipo de node (AI Agent, OpenAI Chat Model, OpenAI)
-          if (item.tags) {
-            const tags = Array.isArray(item.tags) 
-              ? item.tags 
-              : (typeof item.tags === 'object' ? Object.values(item.tags) : []);
-            
-            tags.forEach(tag => {
-              if (tag === 'AI Agent' || tag === 'OpenAI Chat Model' || tag === 'OpenAI') {
-                if (!nodeCounts[tag]) {
-                  nodeCounts[tag] = { calls: 0, tokens: 0, cost: 0 };
-                }
-                
-                nodeCounts[tag].calls += 1;
-                nodeCounts[tag].tokens += (item.total_tokens || 0);
-                nodeCounts[tag].cost += (parseFloat(item.estimated_cost) || 0);
-              }
-            });
-          }
-        });
-        
-        // Encontrar o modelo mais comum
-        let dominantModel = 'unknown';
-        let maxCount = 0;
-        Object.entries(modelCounts).forEach(([model, count]) => {
-          if (count > maxCount) {
-            maxCount = count;
-            dominantModel = model;
-          }
-        });
-        
-        workflowStats[workflowId].model = dominantModel;
-        
-        // Processar cada registro deste workflow
-        records.forEach(item => {
-          const requestId = item.request_id || '';
-          const cost = parseFloat(item.estimated_cost) || 0;
-          const tokens = item.total_tokens || 0;
-          const timestamp = item.timestamp;
-          
-          // Adicionar request_id para contar execuções únicas
-          if (requestId) {
-            requestsByWorkflow[workflowId].add(requestId);
-          }
-          
-          // Acumular estatísticas
-          workflowStats[workflowId].tokens += tokens;
-          workflowStats[workflowId].cost += cost;
-          workflowStats[workflowId].calls += 1;
-          
-          // Verificar e atualizar última execução
-          if (!workflowStats[workflowId].lastExecuted || 
-              new Date(timestamp) > new Date(workflowStats[workflowId].lastExecuted)) {
-            workflowStats[workflowId].lastExecuted = timestamp;
-          }
-        });
-        
-        // Definir número de execuções baseado em requests únicos
-        workflowStats[workflowId].executions = requestsByWorkflow[workflowId].size;
-        
-        // Calcular custo por 1K tokens para este workflow específico
-        if (workflowStats[workflowId].tokens > 0) {
-          workflowStats[workflowId].costPer1K = (workflowStats[workflowId].cost / workflowStats[workflowId].tokens) * 1000;
-        }
-        
-        // Adicionar dados ao resumo por agente
-        costByAgent[workflowName] = {
-          cost: workflowStats[workflowId].cost,
-          tokens: workflowStats[workflowId].tokens
-        };
-        
-        // Log de uso por node para este workflow
-        console.log(`Workflow ${workflowName}: Detalhes de uso por node:`);
-        Object.entries(nodeCounts).forEach(([nodeType, stats]) => {
-          console.log(`  - ${nodeType}: ${stats.calls} chamadas, ${stats.tokens} tokens, $${stats.cost.toFixed(6)} custo`);
-        });
-        
-        console.log(`Workflow ${workflowId} (${workflowName}): Modelo principal: ${workflowStats[workflowId].model}, Tokens: ${workflowStats[workflowId].tokens}, Custo: $${workflowStats[workflowId].cost.toFixed(4)}, Custo/1K: $${workflowStats[workflowId].costPer1K.toFixed(6)}`);
-      });
-      
-      console.log(`Dados processados: ${Object.keys(workflowStats).length} workflows processados individualmente`);
-      
+      // Retornar estrutura vazia
       return {
-        workflowStats,
-        costByAgent
+        input_tokens: 0,
+        output_tokens: 0,
+        input_cached_tokens: 0,
+        output_audio_tokens: 0,
+        requests: 0,
+        efficiency: 0
       };
     } catch (error) {
-      console.error('Erro ao processar dados de workflow:', error);
-      return { workflowStats: {}, costByAgent: {} };
+      console.error('❌ Erro ao inicializar dados do dia atual:', error);
+      return null;
     }
-  }, [supabaseClient]);
+  };
 
-  /**
-   * Função simplificada para buscar dados diretamente das tabelas do Supabase
-   */
-  const fetchData = useCallback(async () => {
-    if (!supabaseClient) {
-      console.warn('fetchData: Cliente Supabase não disponível');
-      // Retornar dados padrão em vez de null para evitar erros quando cliente não está disponível
-      return { ...DEFAULT_USAGE_DATA };
+  // Adicione a função para calcular custo de tokens baseado no modelo
+  const calculateTokenCost = (inputTokens: number, outputTokens: number, model: string): number => {
+    // Normalizar o nome do modelo para corresponder aos preços
+    const normalizedModel = model.toLowerCase();
+    let pricing = MODEL_PRICING.default;
+    
+    // Encontrar o pricing mais adequado para o modelo
+    for (const [modelKey, price] of Object.entries(MODEL_PRICING)) {
+      if (normalizedModel.includes(modelKey)) {
+        pricing = price;
+        break;
+      }
     }
     
-    try {
-      console.log('Buscando dados de uso diretamente das tabelas do Supabase');
-      
-      // 1. Buscar resumo diário (valor principal a ser exibido)
-      let dailySummary = null;
-      try {
-        const { data: dailySummaryData, error: dailySummaryError } = await supabaseClient
-          .from('openai_daily_summary')
-          .select('*')
-          .eq('date', new Date().toISOString().split('T')[0])
-          .single();
-        
-        if (dailySummaryError && dailySummaryError.code !== 'PGRST116') {
-          console.error('Erro ao buscar resumo diário:', dailySummaryError);
-        }
-        
-        // Se há resumo diário, usar os dados
-        if (dailySummaryData) {
-          dailySummary = {
-            total_calls: dailySummaryData.total_calls || 0,
-            total_requests: dailySummaryData.total_requests || 0,
-            total_cost: parseFloat(dailySummaryData.total_cost) || 0,
-            total_tokens: dailySummaryData.total_tokens || 0,
-            update_date: dailySummaryData.updated_at || new Date()
-          };
-        }
-      } catch (err) {
-        console.error('Erro ao buscar resumo diário da tabela:', err);
-      }
-      
-      // Se não há resumo diário, chamar a função RPC para gerar um
-      if (!dailySummary) {
-        try {
-          console.log('Resumo diário não encontrado, chamando função RPC');
-          const { data: rpcData, error: rpcError } = await supabaseClient
-            .rpc('get_daily_openai_usage_summary');
-          
-          if (rpcError) {
-            console.error('Erro ao chamar função de resumo diário:', rpcError);
-          } else if (rpcData && rpcData.length > 0) {
-            dailySummary = {
-              total_calls: rpcData[0].total_calls || 0,
-              total_requests: rpcData[0].total_requests || 0,
-              total_cost: parseFloat(rpcData[0].total_cost) || 0,
-              total_tokens: rpcData[0].total_tokens || 0,
-              update_date: rpcData[0].update_date || new Date()
-            };
-          }
-        } catch (err) {
-          console.error('Erro ao chamar RPC para resumo diário:', err);
-        }
-      }
-      
-      // Usar resumo padrão se ainda não tiver dados
-      if (!dailySummary) {
-        console.warn('Usando resumo diário padrão por falta de dados');
-        dailySummary = {
-          total_calls: 0,
-          total_requests: 0,
-          total_cost: 0,
-          total_tokens: 0,
-          update_date: new Date()
-        };
-      }
-      
-      console.log('Dados do resumo diário:', dailySummary);
-      
-      // 2. Definir período de consulta (30 dias atrás)
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      
-      // 3. Buscar dados diários
-      let dailyData = [];
-      try {
-        const { data, error } = await supabaseClient
-          .from('openai_daily_summary')
-          .select('*')
-          .gte('date', thirtyDaysAgo.toISOString().split('T')[0])
-          .order('date', { ascending: true });
-        
-        if (error) {
-          console.error('Erro ao buscar dados diários:', error);
-        } else if (data) {
-          dailyData = data;
-        }
-      } catch (err) {
-        console.error('Erro na consulta de dados diários:', err);
-      }
-      
-      // 4. Buscar uso por modelo
-      let modelData = [];
-      try {
-        const { data, error } = await supabaseClient
-          .from('openai_usage')
-          .select('model, total_tokens, estimated_cost')
-          .gte('timestamp', thirtyDaysAgo.toISOString())
-          .order('timestamp', { ascending: false });
-        
-        if (error) {
-          console.error('Erro ao buscar dados por modelo:', error);
-        } else if (data) {
-          modelData = data;
-        }
-      } catch (err) {
-        console.error('Erro na consulta de uso por modelo:', err);
-      }
-      
-      // 5. Buscar dados de workflow em separado usando a função especializada
-      let workflowData = { workflowStats: {}, costByAgent: {} };
-      try {
-        workflowData = await fetchWorkflowData(thirtyDaysAgo);
-      } catch (err) {
-        console.error('Erro ao buscar dados de workflow:', err);
-      }
-      
-      // 6. Processar dados diários
-      const dailyUsage: DailyUsageItem[] = [];
-      
-      if (dailyData && dailyData.length > 0) {
-        dailyData.forEach(day => {
-          dailyUsage.push({
-            date: day.date,
-            amount: parseFloat(day.total_cost) || 0,
-            totalTokens: day.total_tokens || 0
-          });
-        });
-      }
-      
-      // 7. Preencher dias sem dados
-      const today = new Date();
-      for (let i = 0; i < 30; i++) {
-        const date = new Date();
-        date.setDate(today.getDate() - i);
-        const dateStr = date.toISOString().split('T')[0];
-        
-        if (!dailyUsage.some(day => day.date === dateStr)) {
-          dailyUsage.push({
-            date: dateStr,
-            amount: 0,
-            totalTokens: 0
-          });
-        }
-      }
-      
-      // 8. Ordenar por data
-      dailyUsage.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      
-      // 9. Processar dados por modelo
-      const modelUsageMap = new Map<string, ModelUsageItem>();
-      
-      if (modelData && modelData.length > 0) {
-        modelData.forEach(item => {
-          const model = item.model;
-          if (!model) return; // Ignorar registros sem modelo
-          
-          const cost = parseFloat(item.estimated_cost) || 0;
-          const tokens = item.total_tokens || 0;
-          
-          if (!modelUsageMap.has(model)) {
-            modelUsageMap.set(model, {
-              model,
-              cost: 0,
-              tokens: 0,
-              requests: 0
-            });
-          }
-          
-          const existingData = modelUsageMap.get(model)!;
-          existingData.cost += cost;
-          existingData.tokens += tokens;
-          existingData.requests += 1;
-        });
-      }
-      
-      const modelUsage = Array.from(modelUsageMap.values());
-      
-      // 10. Calcular totais do mês atual
-      const currentMonth = new Date().toISOString().substring(0, 7); // YYYY-MM
-      const currentMonthCost = dailyUsage
-        .filter(day => day.date.startsWith(currentMonth))
-        .reduce((sum, day) => sum + day.amount, 0);
-      
-      // 11. Calcular totais do mês anterior
-      const lastMonth = new Date();
-      lastMonth.setMonth(lastMonth.getMonth() - 1);
-      const previousMonth = lastMonth.toISOString().substring(0, 7); // YYYY-MM
-      const previousMonthCost = dailyUsage
-        .filter(day => day.date.startsWith(previousMonth))
-        .reduce((sum, day) => sum + day.amount, 0);
-      
-      // 12. Calcular variação percentual
-      const percentChange = previousMonthCost > 0 
-        ? ((currentMonthCost - previousMonthCost) / previousMonthCost) * 100 
-        : 0;
-      
-      // 13. Definir limite de uso (pode ser configurado em ambiente real)
-      const usageLimit = 100; // USD
-      
-      // 14. Calcular média diária
-      const daysInCurrentMonth = new Date().getDate();
-      const dailyAverage = currentMonthCost / daysInCurrentMonth;
-      
-      // 15. Montar objeto de resultado
-      const result: OpenAIUsageSummary = {
-        currentMonthCost,
-        previousMonthCost,
-        percentChange,
-        modelUsage,
-        dailyUsage,
-        costByAgent: workflowData.costByAgent,
-        subscription: {
-          usageLimit,
-          remainingCredits: Math.max(0, usageLimit - currentMonthCost)
-        },
-        dailyAverage: {
-          amount: dailyAverage,
-          percentOfLimit: (dailyAverage / (usageLimit / 30)) * 100
-        },
-        workflowStats: workflowData.workflowStats,
-        dailySummary: dailySummary
+    // Calcular o custo (preço por 1000 tokens * número de tokens / 1000)
+    const inputCost = (pricing.input * inputTokens) / 1000;
+    const outputCost = (pricing.output * outputTokens) / 1000;
+    
+    // Retornar custo total arredondado para 4 casas decimais
+    return Math.round((inputCost + outputCost) * 10000) / 10000;
+  };
+
+  // Função para calcular estimativas de custo para diferentes períodos
+  const calculateCostEstimates = (completionsData: CompletionsUsageData): CompletionsUsageData['costEstimates'] => {
+    if (!completionsData || !completionsData.byDate || !completionsData.byModel) {
+      return {
+        daily: 0,
+        last24h: 0,
+        last7days: 0,
+        last30days: 0,
+        byModel: {}
       };
-      
-      console.log('Dados processados com sucesso:', {
-        dailySummary: result.dailySummary,
-        models: result.modelUsage.length,
-        days: result.dailyUsage.length,
-        workflows: Object.keys(result.workflowStats).length
+    }
+
+    try {
+      console.log('🧮 Calculando estimativas de custo para diferentes períodos...');
+
+      const today = new Date().toISOString().split('T')[0];
+      const byModel: { [key: string]: number } = {};
+      let dailyCost = 0;
+      let last24hCost = 0;
+      let last7daysCost = 0;
+      let last30daysCost = 0;
+
+      // Calcular custos por modelo
+      completionsData.byModel.forEach((model: ModelResult) => {
+        const modelName = model.name || 'desconhecido';
+        const cost = calculateTokenCost(model.input_tokens, model.output_tokens, modelName);
+        byModel[modelName] = cost;
       });
-      
-      return result;
-    } catch (error) {
-      console.error('Erro ao buscar dados do Supabase:', error);
-      // Retornar dados padrão para evitar quebrar a UI
-      return { ...DEFAULT_USAGE_DATA };
-    }
-  }, [supabaseClient, fetchWorkflowData]);
 
-  /**
-   * Função para buscar dados de uso da OpenAI
-   */
-  const fetchUsageData = useCallback(async (silent: boolean = false) => {
-    // Impedir múltiplas chamadas simultâneas
-    if (requestInProgress.current || isLoading) {
-      console.log('Requisição já em andamento, ignorando nova chamada');
-      return;
-    }
-    
-    setIsLoading(true);
-    requestInProgress.current = true;
-
-    try {
-      // Buscar dados diretamente do Supabase
-      const data = await fetchData();
-      
-      // Sempre definir os dados, mesmo que sejam os padrões
-        setUsageData(data);
-      setError(null);
-      
-    } catch (err) {
-      console.error('Erro ao buscar dados de uso:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-      
-      // Definir dados padrão para evitar quebrar a UI
-      setUsageData({ ...DEFAULT_USAGE_DATA });
-      
-      if (!silent) {
-        toast.error('Erro ao buscar dados de uso', {
-          description: err instanceof Error ? err.message : 'Não foi possível carregar os dados de uso da OpenAI'
-        });
+      // Cálculo para custo diário (usando dailyStats se disponível)
+      if (completionsData.dailyStats) {
+        // Use a média de custo do modelo para estimativa
+        const avgInputCost = Object.values(MODEL_PRICING).reduce((sum, p) => sum + p.input, 0) / Object.keys(MODEL_PRICING).length;
+        const avgOutputCost = Object.values(MODEL_PRICING).reduce((sum, p) => sum + p.output, 0) / Object.keys(MODEL_PRICING).length;
+        
+        dailyCost = (avgInputCost * completionsData.dailyStats.input_tokens / 1000) + 
+                   (avgOutputCost * completionsData.dailyStats.output_tokens / 1000);
+        dailyCost = Math.round(dailyCost * 10000) / 10000;
       }
+
+      // Processar dados para diferentes períodos
+      const now = new Date();
+      const oneDayAgo = new Date(now.getTime() - 24*60*60*1000).toISOString().split('T')[0];
+      const sevenDaysAgo = new Date(now.getTime() - 7*24*60*60*1000).toISOString().split('T')[0];
+      const thirtyDaysAgo = new Date(now.getTime() - 30*24*60*60*1000).toISOString().split('T')[0];
+
+      completionsData.byDate.forEach((date: DateResult) => {
+        if (!date || !date.date) return;
+        
+        // Para cada data, calcular custo aproximado usando preços médios
+        const avgInputCost = 0.005;  // Valor médio para entrada
+        const avgOutputCost = 0.015; // Valor médio para saída
+        
+        const dateCost = (avgInputCost * date.input_tokens / 1000) + 
+                       (avgOutputCost * date.output_tokens / 1000);
+        
+        // Adicionar ao período apropriado
+        if (date.date >= oneDayAgo) {
+          last24hCost += dateCost;
+        }
+        
+        if (date.date >= sevenDaysAgo) {
+          last7daysCost += dateCost;
+        }
+        
+        if (date.date >= thirtyDaysAgo) {
+          last30daysCost += dateCost;
+        }
+      });
+
+      // Arredondar os valores
+      last24hCost = Math.round(last24hCost * 100) / 100;
+      last7daysCost = Math.round(last7daysCost * 100) / 100;
+      last30daysCost = Math.round(last30daysCost * 100) / 100;
+
+      console.log('💰 Custos estimados calculados:', {
+        daily: dailyCost,
+        last24h: last24hCost,
+        last7days: last7daysCost,
+        last30days: last30daysCost,
+        modelsCount: Object.keys(byModel).length
+      });
+
+      return {
+        daily: dailyCost,
+        last24h: last24hCost,
+        last7days: last7daysCost,
+        last30days: last30daysCost,
+        byModel
+      };
+    } catch (e) {
+      console.error('❌ Erro ao calcular estimativas de custo:', e);
+      return {
+        daily: 0,
+        last24h: 0,
+        last7days: 0,
+        last30days: 0,
+        byModel: {}
+      };
+    }
+  };
+
+  // Função para buscar dados de custos reais - modificada para não usar Supabase
+  const fetchRealCostData = async () => {
+    // Esta função não será mais usada pois obtemos os dados de custos diretamente da API
+    return null;
+  };
+
+  // Modificar a função fetchData para buscar dados apenas do localStorage
+  const fetchData = async (): Promise<void> => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // Buscar dados do localStorage
+      console.log('🔄 Buscando dados do localStorage...');
+      let completionsUsage = null;
+      let dailyStats = null;
+      
+      try {
+        const storedDataStr = localStorage.getItem(STORAGE_KEY);
+        if (storedDataStr) {
+          const storedData = JSON.parse(storedDataStr);
+          if (storedData && storedData.completionsUsage) {
+            completionsUsage = storedData.completionsUsage;
+            dailyStats = storedData.completionsUsage.dailyStats || null;
+            console.log('✅ Dados carregados do localStorage com sucesso');
+          } else {
+            console.log('⚠️ Dados no localStorage não contêm completionsUsage');
+          }
+        } else {
+          console.log('⚠️ Nenhum dado encontrado no localStorage');
+        }
+      } catch (e) {
+        console.warn('⚠️ Erro ao carregar dados do localStorage:', e);
+      }
+      
+      // Se não temos dados em cache, criar estrutura vazia
+      if (!completionsUsage) {
+        console.log('Criando estrutura de dados vazia para completions');
+        completionsUsage = createEmptyCompletionsData();
+      }
+      
+      // Adicionar o completionsUsage com dailyStats
+      const enhancedCompletionsUsage = {
+        ...completionsUsage,
+        dailyStats: dailyStats || undefined,
+      };
+      
+      // Calcular estimativas de custo
+      const costEstimates = calculateCostEstimates({
+        ...enhancedCompletionsUsage
+      });
+
+      // Adicionar estimativas de custo
+      const completionsUsageWithEstimates = {
+        ...enhancedCompletionsUsage,
+        costEstimates
+      };
+
+      // Montar o objeto de resposta
+      const data = {
+        subscription: null,
+        currentMonth: null,
+        currentMonthTotal: 0,
+        previousMonth: null,
+        previousMonthTotal: 0,
+        months: [],
+        completionsUsage: completionsUsageWithEstimates
+      };
+      
+      console.log('✅ Processamento de dados concluído com dados:', 
+        !completionsUsage.byDate.length && !completionsUsage.byModel.length
+          ? 'vazios (estrutura inicial)'
+          : `${completionsUsage.byDate.length} registros por data, ${completionsUsage.byModel.length} modelos`
+      );
+      
+      setUsageData(data);
+      
+      // Se não temos dados no localStorage, precisamos buscar da API
+      if (!completionsUsage.byDate.length && !completionsUsage.byModel.length) {
+        console.log('Dados vazios, recomendado sincronizar com API usando syncCompletionsData()');
+      }
+    } catch (err) {
+      console.error('❌ Erro ao buscar dados:', err);
+      setError(err instanceof Error ? err.message : 'Erro desconhecido ao buscar dados');
     } finally {
       setIsLoading(false);
-      requestInProgress.current = false;
     }
-  }, [fetchData]);
+  };
 
   /**
-   * Função para sincronizar dados com o N8N
+   * Função para sincronizar dados de completions
    */
-  const syncWithSupabase = async () => {
-    setIsLoading(true)
-    setSyncError(null)
+  const syncCompletionsData = async () => {
+    setIsLoading(true);
     
     try {
-      console.log('Iniciando sincronização manual de dados com o Supabase...')
+      toast.info('Sincronizando dados de completions...', {
+        description: 'Buscando dados da API da OpenAI'
+      });
       
-      // Atualizar o resumo diário primeiro (opcional, pois a Edge Function também faz isso)
-      await fetch('/api/openai/update-daily-summary', {
+      // Buscar 31 dias (máximo permitido pela API)
+      const daysToFetch = 31;
+      console.log(`🔄 Iniciando sincronização de dados para os últimos ${daysToFetch} dias`);
+      
+      const response = await fetch('/api/openai/sync-completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ days: daysToFetch })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('❌ Erro na resposta da API:', errorData);
+        throw new Error(errorData.error || 'Erro ao sincronizar dados de completions');
+      }
+      
+      const result = await response.json();
+      console.log('✅ Resultado da sincronização de completions:', result);
+      
+      // Verificar e processar dados recebidos
+      if (!result.data || !Array.isArray(result.data) || result.data.length === 0) {
+        console.warn('⚠️ API retornou sucesso, mas sem dados para processar');
+        toast.warning('Nenhum dado disponível', {
+          description: 'A API não retornou dados para processar.'
+        });
+        setIsLoading(false);
+        return;
+      }
+      
+      // Processar os dados brutos
+      console.log(`🔍 Processando ${result.data.length} registros recebidos da API...`);
+      const processedData = processCompletionsData(result.data);
+      
+      // Log detalhado para diagnóstico
+      console.log('📊 Dados processados:',
+        `${processedData.byDate.length} dias, ` +
+        `${processedData.byModel.length} modelos, ` +
+        `${processedData.total.input_tokens.toLocaleString()} input tokens, ` +
+        `${processedData.total.output_tokens.toLocaleString()} output tokens`
+      );
+      
+      if (processedData.byDate.length === 0) {
+        console.warn('⚠️ Nenhum dado por data gerado após processamento');
+      } else {
+        console.log('📅 Datas processadas:', processedData.byDate.map(d => d.date).join(', '));
+      }
+      
+      // Atualizar o estado com os novos dados
+      setUsageData(prevData => {
+        if (!prevData) {
+          // Criar objeto inicial se não existir
+          const newData: OpenAIUsageSummary = {
+            completionsUsage: {
+              ...processedData,
+              // Manter dailyStats se já existir
+              dailyStats: prevData?.completionsUsage?.dailyStats,
+              // Manter custos se já existirem
+              actualCosts: prevData?.completionsUsage?.actualCosts
+            }
+          };
+          
+          // Salvar no localStorage
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
+            localStorage.setItem(STORAGE_TIMESTAMP_KEY, Date.now().toString());
+          } catch (e) {
+            console.warn('⚠️ Erro ao salvar dados no localStorage:', e);
+          }
+          
+          return newData;
+        }
+        
+        // Atualizar dados existentes
+        const newData = { ...prevData };
+        
+        if (!newData.completionsUsage) {
+          newData.completionsUsage = processedData;
+        } else {
+          // Atualizar mantendo dailyStats e actualCosts
+          newData.completionsUsage = {
+            ...processedData,
+            dailyStats: newData.completionsUsage.dailyStats || undefined,
+            actualCosts: newData.completionsUsage.actualCosts || undefined
+          };
+        }
+        
+        // Calcular estimativas de custo
+        newData.completionsUsage.costEstimates = calculateCostEstimates(newData.completionsUsage);
+        
+        // Salvar no localStorage
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
+          localStorage.setItem(STORAGE_TIMESTAMP_KEY, Date.now().toString());
+        } catch (e) {
+          console.warn('⚠️ Erro ao salvar dados no localStorage:', e);
+        }
+        
+        return newData;
+      });
+      
+      // Atualizar o timestamp da última sincronização
+      const now = new Date();
+      setLastSyncTime(now);
+      
+      toast.success('Dados sincronizados com sucesso', {
+        description: `${result.data.length} registros processados.`
+      });
+      
+    } catch (error) {
+      console.error('❌ Erro ao sincronizar dados de completions:', error);
+      
+      toast.error('Falha na sincronização de dados', {
+        description: error instanceof Error ? error.message : 'Não foi possível sincronizar os dados.'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * Função para sincronizar dados de custos da OpenAI
+   */
+  const syncCostData = async () => {
+    setCostSyncInProgress(true);
+    
+    toast.info('Obtendo dados de custos reais...', {
+      description: 'Buscando dados diretamente da API da OpenAI'
+    });
+    
+    try {
+      // Dias limitados a 30 para compatibilidade com a API
+      const daysToFetch = 30;
+      console.log(`🔄 Iniciando obtenção de dados de custo para os últimos ${daysToFetch} dias`);
+      
+      // Chamar a API para obter os dados de custos diretamente
+      const response = await fetch('/api/openai/sync-costs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ days: daysToFetch, forceRefresh: true })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('❌ Erro na resposta da API de custos:', errorData);
+        throw new Error(errorData.error || 'Erro ao obter dados de custos');
+      }
+      
+      const result = await response.json();
+      console.log('✅ Resultado da obtenção de custos:', result);
+      
+      if (!result.data) {
+        console.warn('⚠️ API retornou sucesso, mas sem dados processados');
+        toast.warning('Nenhum dado de custo disponível', {
+          description: 'A API da OpenAI não retornou dados de custos para o período solicitado.'
+        });
+        setCostSyncInProgress(false);
+        return;
+      }
+      
+      // Diagnóstico detalhado dos dados recebidos
+      console.log("=== DIAGNÓSTICO DE CUSTOS RECEBIDOS ===");
+      if (result.data.byDate && result.data.byDate.length > 0) {
+        console.log("Custos por data:");
+        result.data.byDate.forEach((item: CostResult) => {
+          console.log(`Data: ${item.date}, Valor: $${item.amount_value}`);
+        });
+      } else {
+        console.warn("Nenhum dado de custo por data disponível");
+      }
+      
+      // Atualizar o estado diretamente com os dados recebidos
+      setUsageData(prevData => {
+        if (!prevData) return prevData;
+        
+        // Criar uma cópia profunda do estado atual
+        const newData = JSON.parse(JSON.stringify(prevData));
+        
+        // Atualizar a seção de custos
+        if (!newData.completionsUsage) {
+          newData.completionsUsage = {};
+        }
+        
+        // Adicionar dados de custos reais
+        newData.completionsUsage.actualCosts = result.data;
+        
+        // Log confirmando a atualização
+        console.log("Estado atualizado com dados de custos:", 
+          result.data.byDate ? 
+            `${result.data.byDate.length} registros de custo, total: $${result.data.total}` : 
+            "Sem dados por data"
+        );
+        
+        return newData;
+      });
+      
+      toast.success('Dados de custos obtidos', {
+        description: `${result.stats?.records_processed || 0} registros processados.`
+      });
+      
+      // Registrar o horário da obtenção bem-sucedida
+      const now = new Date();
+      setLastSyncTime(now);
+      
+      // Salvar o timestamp no localStorage também
+      try {
+        localStorage.setItem('siaflow_completions_last_updated', now.getTime().toString());
+      } catch (e) {
+        console.warn('Erro ao salvar timestamp no localStorage:', e);
+      }
+    } catch (error) {
+      console.error('Erro ao obter dados de custos:', error);
+      
+      // Formatando a mensagem de erro para o usuário
+      let errorMessage = 'Não foi possível obter os dados de custos.';
+      let suggestion = 'Tente novamente mais tarde ou contate o suporte.';
+      
+      if (error instanceof Error) {
+        const errorString = error.message || String(error);
+        
+        // Verificar por erros específicos
+        if (errorString.includes('insufficient permissions')) {
+          errorMessage = 'Erro de permissão: A chave de API não tem permissões suficientes.';
+          suggestion = 'É necessário utilizar uma chave de API com permissões de administrador (api.usage.read).';
+        } else if (errorString.includes('OPENAI_ADMIN_KEY')) {
+          errorMessage = 'Chave de API de administrador não configurada.';
+          suggestion = 'Configure a variável de ambiente OPENAI_ADMIN_KEY com uma chave de administrador da OpenAI.';
+        }
+      }
+      
+      toast.error('Falha na obtenção de custos', {
+        description: `${errorMessage} ${suggestion}`,
+        duration: 6000 // Aumentando a duração para dar tempo de ler
+      });
+    } finally {
+      setCostSyncInProgress(false);
+    }
+  };
+
+  /**
+   * Busca e atualiza especificamente os dados do dia atual (hoje)
+   * Isso executa uma chamada otimizada que busca apenas o dia de hoje
+   */
+  const syncTodayData = async (): Promise<void> => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      console.log('🔄 Iniciando sincronização específica dos dados de hoje');
+      
+      // Obter data de hoje no formato YYYY-MM-DD para comparações
+      const today = new Date();
+      const todayString = today.toISOString().split('T')[0];
+      console.log(`Data de hoje para sincronização: ${todayString}`);
+      
+      // Fazer requisição à API especifica para o dia atual
+      console.log('Chamando API para dados de hoje...');
+      const todayDataResponse = await fetch('/api/openai/sync-today', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         }
-      })
+      });
       
-      // Chamar nossa API de sincronização automática
-      const response = await fetch('/api/cron/sync-n8n', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer sync-n8n-cron-secret`
-        }
-      })
-      
-      if (!response.ok) {
-        throw new Error(`Erro na sincronização: ${response.status}`)
+      if (!todayDataResponse.ok) {
+        const errorData = await todayDataResponse.json().catch(() => ({}));
+        console.error('❌ Erro na resposta da API:', errorData);
+        throw new Error(errorData.error || 'Erro ao sincronizar dados de hoje');
       }
       
-      const data = await response.json()
-      console.log('Resposta da sincronização:', data)
+      const todayDataResult = await todayDataResponse.json().catch(() => ({ success: false }));
       
-      // Atualizar os dados após a sincronização
-      await fetchUsageData()
+      if (!todayDataResult.success) {
+        throw new Error(todayDataResult.error || 'Falha ao sincronizar dados de hoje');
+      }
       
-      // Exibir mensagem de sucesso com dados extraídos
-      const extractedCount = data.stats?.recordsExtracted || 0
-      const savedCount = data.stats?.recordsSaved || 0
+      console.log('✅ Dados brutos do dia atual recebidos da API:', todayDataResult);
       
-      toast.success(
-        `Sincronização concluída: ${savedCount} registros salvos`, 
-        { description: `Foram extraídos ${extractedCount} registros de uso da OpenAI. Duração: ${data.duration || '?'}` }
-      )
+      // Verificar se os dados de hoje foram recebidos
+      if (!todayDataResult.todayData) {
+        console.warn('⚠️ A API retornou sucesso, mas não incluiu dados processados para hoje');
+      } else {
+        console.log('✅ Dados processados para hoje recebidos:', todayDataResult.todayData);
+      }
       
-      return data
+      // Atualizar os dados no state com foco nos dados do dia atual
+      setUsageData(prevData => {
+        if (!prevData) {
+          // Criar estrutura básica de dados
+          const newData: OpenAIUsageSummary = {
+            subscription: null,
+            currentMonth: null,
+            currentMonthTotal: 0,
+            previousMonth: null,
+            previousMonthTotal: 0,
+            months: [],
+            completionsUsage: {
+              byDate: [],
+              byModel: [],
+              total: {
+                input_tokens: 0,
+                output_tokens: 0,
+                input_cached_tokens: 0,
+                input_audio_tokens: 0,
+                output_audio_tokens: 0,
+                requests: 0,
+                efficiency: 0
+              },
+              dailyStats: {
+                input_tokens: 0,
+                output_tokens: 0,
+                input_cached_tokens: 0,
+                output_audio_tokens: 0,
+                requests: 0,
+                efficiency: 0,
+                totalCost: 0
+              }
+            }
+          };
+          
+          console.log('Criada estrutura básica por não existir dados anteriores');
+          
+          // Se temos dados de hoje da API, atualizá-los
+          if (todayDataResult.todayData) {
+            if (newData.completionsUsage) {
+              newData.completionsUsage.dailyStats = {
+                input_tokens: todayDataResult.todayData.usage.input_tokens || 0,
+                output_tokens: todayDataResult.todayData.usage.output_tokens || 0,
+                input_cached_tokens: todayDataResult.todayData.usage.input_cached_tokens || 0,
+                output_audio_tokens: 0,
+                requests: todayDataResult.todayData.usage.requests || 0,
+                efficiency: todayDataResult.todayData.usage.efficiency || 0,
+                totalCost: todayDataResult.todayData.cost || 0
+              };
+              
+              // Adicionar aos dados por data
+              newData.completionsUsage.byDate.push({
+                date: todayDataResult.todayData.date,
+                input_tokens: todayDataResult.todayData.usage.input_tokens || 0,
+                output_tokens: todayDataResult.todayData.usage.output_tokens || 0,
+                input_cached_tokens: todayDataResult.todayData.usage.input_cached_tokens || 0,
+                requests: todayDataResult.todayData.usage.requests || 0
+              });
+              
+              // Inicializar dados de custos
+              newData.completionsUsage.actualCosts = {
+                byDate: [{
+                  date: todayDataResult.todayData.date,
+                  amount_value: todayDataResult.todayData.cost || 0,
+                  amount_currency: 'USD'
+                }],
+                total: todayDataResult.todayData.cost || 0,
+                last7days: todayDataResult.todayData.cost || 0,
+                last30days: todayDataResult.todayData.cost || 0
+              };
+            }
+          }
+          
+          return newData;
+        }
+        
+        // Clonar o objeto anterior para não modificá-lo diretamente
+        const newData = { ...prevData };
+        
+        // Garantir que a estrutura de dados existe
+        if (!newData.completionsUsage) {
+          newData.completionsUsage = {
+            byDate: [],
+            byModel: [],
+            total: {
+              input_tokens: 0,
+              output_tokens: 0,
+              input_cached_tokens: 0,
+              input_audio_tokens: 0,
+              output_audio_tokens: 0,
+              requests: 0,
+              efficiency: 0
+            }
+          };
+        }
+        
+        if (newData.completionsUsage && !newData.completionsUsage.dailyStats) {
+          newData.completionsUsage.dailyStats = {
+            input_tokens: 0,
+            output_tokens: 0,
+            input_cached_tokens: 0, 
+            output_audio_tokens: 0,
+            requests: 0,
+            efficiency: 0
+          };
+        }
+        
+        // Usar dados da API se disponíveis, ou criar dados vazios
+        const todayData = todayDataResult.todayData || {
+          date: todayString,
+          usage: {
+            input_tokens: 0,
+            output_tokens: 0,
+            input_cached_tokens: 0,
+            requests: 0,
+            efficiency: 0
+          },
+          cost: 0
+        };
+        
+        // Garantir que a data está correta
+        todayData.date = todayString;
+        
+        // Atualizar dailyStats com os dados mais recentes
+        if (newData.completionsUsage && newData.completionsUsage.dailyStats) {
+          newData.completionsUsage.dailyStats = {
+            ...newData.completionsUsage.dailyStats,
+            ...todayData.usage,
+            totalCost: todayData.cost || 0
+          };
+        }
+        
+        // Garantir que o array byDate existe
+        if (newData.completionsUsage && !newData.completionsUsage.byDate) {
+          newData.completionsUsage.byDate = [];
+        }
+        
+        // Atualizar ou adicionar dados para hoje em byDate
+        if (newData.completionsUsage && newData.completionsUsage.byDate) {
+          const existingTodayIndex = newData.completionsUsage.byDate.findIndex(
+            item => item.date === todayString
+          );
+          
+          if (existingTodayIndex >= 0) {
+            // Atualizar dados existentes
+            newData.completionsUsage.byDate[existingTodayIndex] = {
+              date: todayString,
+              input_tokens: todayData.usage.input_tokens || 0,
+              output_tokens: todayData.usage.output_tokens || 0,
+              input_cached_tokens: todayData.usage.input_cached_tokens || 0,
+              requests: todayData.usage.requests || 0
+            };
+          } else {
+            // Adicionar novos dados
+            newData.completionsUsage.byDate.push({
+              date: todayString,
+              input_tokens: todayData.usage.input_tokens || 0,
+              output_tokens: todayData.usage.output_tokens || 0,
+              input_cached_tokens: todayData.usage.input_cached_tokens || 0,
+              requests: todayData.usage.requests || 0
+            });
+          }
+        }
+        
+        // Garantir que a estrutura de custos existe
+        if (newData.completionsUsage && !newData.completionsUsage.actualCosts) {
+          newData.completionsUsage.actualCosts = {
+            byDate: [],
+            total: 0,
+            last7days: 0,
+            last30days: 0
+          };
+        }
+        
+        if (newData.completionsUsage && newData.completionsUsage.actualCosts && !newData.completionsUsage.actualCosts.byDate) {
+          newData.completionsUsage.actualCosts.byDate = [];
+        }
+        
+        // Atualizar ou adicionar custos para hoje
+        if (newData.completionsUsage && newData.completionsUsage.actualCosts && newData.completionsUsage.actualCosts.byDate) {
+          const existingTodayCostIndex = newData.completionsUsage.actualCosts.byDate.findIndex(
+            item => item.date === todayString
+          );
+          
+          if (existingTodayCostIndex >= 0) {
+            // Usar o valor de custo da API ou manter o existente se maior que zero
+            const currentCost = newData.completionsUsage.actualCosts.byDate[existingTodayCostIndex].amount_value;
+            const newCost = todayData.cost || 0;
+            newData.completionsUsage.actualCosts.byDate[existingTodayCostIndex] = {
+              date: todayString,
+              amount_value: newCost > 0 ? newCost : (currentCost > 0 ? currentCost : 0),
+              amount_currency: 'USD'
+            };
+          } else {
+            // Adicionar novo registro de custo
+            newData.completionsUsage.actualCosts.byDate.push({
+              date: todayString,
+              amount_value: todayData.cost || 0,
+              amount_currency: 'USD'
+            });
+          }
+        }
+        
+        // Recalcular totais
+        if (newData.completionsUsage && newData.completionsUsage.actualCosts && newData.completionsUsage.actualCosts.byDate && newData.completionsUsage.actualCosts.byDate.length > 0) {
+          // Total geral
+          newData.completionsUsage.actualCosts.total = newData.completionsUsage.actualCosts.byDate.reduce(
+            (sum, item) => sum + (item.amount_value || 0), 0
+          );
+          
+          // Últimos 7 dias
+          const sevenDaysAgo = new Date();
+          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+          const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
+          
+          newData.completionsUsage.actualCosts.last7days = newData.completionsUsage.actualCosts.byDate
+            .filter(item => item.date >= sevenDaysAgoStr)
+            .reduce((sum, item) => sum + (item.amount_value || 0), 0);
+            
+          // Últimos 30 dias
+          const thirtyDaysAgo = new Date();
+          thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+          const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
+          
+          newData.completionsUsage.actualCosts.last30days = newData.completionsUsage.actualCosts.byDate
+            .filter(item => item.date >= thirtyDaysAgoStr)
+            .reduce((sum, item) => sum + (item.amount_value || 0), 0);
+        }
+        
+        // Salvar dados no localStorage para acesso offline
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
+          localStorage.setItem(STORAGE_TIMESTAMP_KEY, Date.now().toString());
+        } catch (e) {
+          console.warn('⚠️ Erro ao salvar dados no localStorage:', e);
+        }
+        
+        console.log('✅ Dados de hoje atualizados com sucesso:', {
+          custosHoje: todayData.cost,
+          usageHoje: todayData.usage
+        });
+        
+        return newData;
+      });
+      
+      // Atualizar o timestamp de última sincronização
+      const now = new Date();
+      setLastSyncTime(now);
+      
     } catch (error) {
-      console.error('Erro ao sincronizar dados com Supabase:', error)
-      setSyncError(error instanceof Error ? error.message : 'Erro desconhecido')
-      
-      toast.error('Falha na sincronização', {
-        description: error instanceof Error ? error.message : 'Erro desconhecido ao sincronizar dados'
-      })
-      
-      throw error
+      console.error('❌ Erro ao sincronizar dados do dia atual:', error);
+      setError(error instanceof Error ? error.message : 'Erro desconhecido ao sincronizar dados do dia atual');
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
-  /**
-   * Função para exportar dados para CSV
-   */
+  // Função simplificada para exportar apenas dados de completions
   const exportData = async () => {
-    if (!usageData) {
+    if (!usageData || !usageData.completionsUsage) {
       toast.error('Não há dados para exportar');
       return;
     }
     
     try {
-      // Preparar dados para exportação
-      const dailyUsageCSV = [
-        'Data,Custo,Tokens',
-        ...usageData.dailyUsage.map(day => 
-          `${day.date},${day.amount.toFixed(6)},${day.totalTokens}`
+      const { completionsUsage } = usageData;
+      
+      // Exportar dados por modelo
+      const modelCsv = [
+        'Modelo,Input Tokens,Output Tokens,Tokens Cacheados,Requisições,Eficiência',
+        ...completionsUsage.byModel.map(model => 
+          `${model.name},${model.input_tokens},${model.output_tokens},${model.input_cached_tokens},${model.requests},${model.efficiency}%`
         )
       ].join('\n');
       
-      const modelUsageCSV = [
-        'Modelo,Custo,Tokens,Requisições',
-        ...usageData.modelUsage.map(model => 
-          `${model.model},${model.cost.toFixed(6)},${model.tokens},${model.requests}`
+      // Exportar dados por data
+      const dateCsv = [
+        'Data,Input Tokens,Output Tokens,Tokens Cacheados,Requisições',
+        ...completionsUsage.byDate.map(date => 
+          `${date.date},${date.input_tokens},${date.output_tokens},${date.input_cached_tokens},${date.requests}`
         )
       ].join('\n');
       
-      const workflowUsageCSV = [
-        'Workflow,Nome,Execuções,Chamadas,Tokens,Custo',
-        ...Object.entries(usageData.workflowStats).map(([id, data]) => 
-          `${id},${data.name},${data.executions},${data.calls},${data.tokens},${data.cost.toFixed(6)}`
-        )
-      ].join('\n');
-      
-      // Chamar API para gerar arquivo
-      const response = await fetch('/api/n8n/export-usage', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          dailyUsageCSV,
-          modelUsageCSV,
-          workflowUsageCSV,
-          agentUsageCSV: [
-            'Agente,Custo,Tokens',
-            ...Object.entries(usageData.costByAgent).map(([agent, data]) => 
-              `${agent},${data.cost.toFixed(6)},${data.tokens}`
-            )
-          ].join('\n')
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Falha ao gerar arquivo para download');
-      }
-      
-      const blob = await response.blob();
+      // Criar blob com os dados
+      const blob = new Blob([
+        `# Dados de uso da OpenAI - Completions\n`,
+        `# Data de exportação: ${new Date().toISOString()}\n\n`,
+        `# POR MODELO\n${modelCsv}\n\n`,
+        `# POR DATA\n${dateCsv}\n\n`,
+        `# TOTAIS\n`,
+        `Input Tokens,${completionsUsage.total.input_tokens}\n`,
+        `Output Tokens,${completionsUsage.total.output_tokens}\n`,
+        `Tokens Cacheados,${completionsUsage.total.input_cached_tokens}\n`,
+        `Requisições,${completionsUsage.total.requests}\n`,
+        `Eficiência,${completionsUsage.total.efficiency}%\n`
+      ], { type: 'text/csv' });
       
       // Criar URL para download
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `openai-usage-export-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.download = `openai-completions-usage-${new Date().toISOString().slice(0, 10)}.csv`;
       document.body.appendChild(a);
       a.click();
       
       // Limpar
+      setTimeout(() => {
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
+      }, 0);
       
-      toast.success('Dados exportados com sucesso');
+      toast.success('Dados exportados com sucesso', {
+        description: 'O download do arquivo deve começar automaticamente'
+      });
     } catch (err) {
       console.error('Erro ao exportar dados:', err);
       toast.error('Erro ao exportar dados', {
@@ -849,17 +1041,228 @@ export default function useOpenAIUsage(): OpenAIUsageHookResult {
     }
   };
 
+  /**
+   * Função para processar os dados de completions vindo da resposta da API
+   * @param apiData Dados brutos da API
+   * @returns Dados processados para uso no frontend
+   */
+  const processCompletionsData = (apiData: any[] = []) => {
+    try {
+      console.log('Processando dados brutos da API de completions:', 
+        !apiData.length ? 'nenhum dado recebido' : `${apiData.length} registros recebidos`);
+      
+      if (!apiData || !apiData.length) {
+        console.warn('⚠️ Nenhum dado recebido da API para processar');
+        return createEmptyCompletionsData();
+      }
+      
+      // Mapear os resultados por data
+      const resultsByDate = new Map();
+      // Mapear os resultados por modelo
+      const resultsByModel = new Map();
+      
+      // Inicializar totais
+      let totalInputTokens = 0;
+      let totalOutputTokens = 0;
+      let totalInputCachedTokens = 0;
+      let totalInputAudioTokens = 0;
+      let totalOutputAudioTokens = 0;
+      let totalRequests = 0;
+      
+      // Processar cada registro da API
+      apiData.forEach(item => {
+        // Verificar se o registro tem um timestamp válido
+        if (!item.start_time) {
+          console.warn('⚠️ Registro sem timestamp encontrado, ignorando:', item);
+          return;
+        }
+        
+        // Converter timestamp para data no formato YYYY-MM-DD
+        const date = new Date(item.start_time * 1000);
+        const dateKey = date.toISOString().split('T')[0];
+        
+        // Debug para verificar conversão de timestamp para data
+        console.log(`Timestamp ${item.start_time} convertido para data ${dateKey}`);
+        
+        // Atualizar resultados por data
+        if (!resultsByDate.has(dateKey)) {
+          resultsByDate.set(dateKey, {
+            date: dateKey,
+            input_tokens: 0,
+            output_tokens: 0,
+            input_cached_tokens: 0,
+            input_audio_tokens: 0,
+            output_audio_tokens: 0,
+            requests: 0
+          });
+        }
+        
+        const dateResult = resultsByDate.get(dateKey);
+        dateResult.input_tokens += (item.input_tokens || 0);
+        dateResult.output_tokens += (item.output_tokens || 0);
+        dateResult.input_cached_tokens += (item.input_cached_tokens || 0);
+        dateResult.input_audio_tokens += (item.input_audio_tokens || 0);
+        dateResult.output_audio_tokens += (item.output_audio_tokens || 0);
+        dateResult.requests += (item.num_model_requests || 0);
+        
+        // Atualizar resultados por modelo
+        const modelKey = item.model || 'desconhecido';
+        if (!resultsByModel.has(modelKey)) {
+          resultsByModel.set(modelKey, {
+            name: modelKey,
+            input_tokens: 0,
+            output_tokens: 0,
+            input_cached_tokens: 0,
+            input_audio_tokens: 0,
+            output_audio_tokens: 0,
+            requests: 0
+          });
+        }
+        
+        const modelResult = resultsByModel.get(modelKey);
+        modelResult.input_tokens += (item.input_tokens || 0);
+        modelResult.output_tokens += (item.output_tokens || 0);
+        modelResult.input_cached_tokens += (item.input_cached_tokens || 0);
+        modelResult.input_audio_tokens += (item.input_audio_tokens || 0);
+        modelResult.output_audio_tokens += (item.output_audio_tokens || 0);
+        modelResult.requests += (item.num_model_requests || 0);
+        
+        // Atualizar totais gerais
+        totalInputTokens += (item.input_tokens || 0);
+        totalOutputTokens += (item.output_tokens || 0);
+        totalInputCachedTokens += (item.input_cached_tokens || 0);
+        totalInputAudioTokens += (item.input_audio_tokens || 0);
+        totalOutputAudioTokens += (item.output_audio_tokens || 0);
+        totalRequests += (item.num_model_requests || 0);
+      });
+      
+      // Calcular eficiência para cada modelo
+      resultsByModel.forEach(model => {
+        model.efficiency = calculateEfficiency(model.input_tokens, model.output_tokens);
+      });
+      
+      // Eficiência total
+      const totalEfficiency = calculateEfficiency(totalInputTokens, totalOutputTokens);
+      
+      // Log detalhado para diagnóstico
+      console.log(`Processamento concluído: ${resultsByDate.size} dias, ${resultsByModel.size} modelos`);
+      console.log("Todas as datas processadas:", [...resultsByDate.keys()].sort().join(', '));
+      
+      // Ordenar datas para exibição cronológica
+      const byDateSorted = Array.from(resultsByDate.values()).sort((a, b) => {
+        return new Date(a.date).getTime() - new Date(b.date).getTime();
+      });
+      
+      // Ordenar modelos por uso (tokens) para destacar os mais usados
+      const byModelSorted = Array.from(resultsByModel.values()).sort((a, b) => {
+        return (b.input_tokens + b.output_tokens) - (a.input_tokens + a.output_tokens);
+      });
+      
+      // Retornar dados processados
+      return {
+        byDate: byDateSorted,
+        byModel: byModelSorted,
+        total: {
+          input_tokens: totalInputTokens,
+          output_tokens: totalOutputTokens,
+          input_cached_tokens: totalInputCachedTokens,
+          input_audio_tokens: totalInputAudioTokens,
+          output_audio_tokens: totalOutputAudioTokens,
+          requests: totalRequests,
+          efficiency: totalEfficiency
+        }
+      };
+    } catch (error) {
+      console.error('❌ Erro ao processar dados de completions:', error);
+      return createEmptyCompletionsData();
+    }
+  };
+
+  /**
+   * Busca e atualiza especificamente os dados do dia atual (hoje)
+   * Isso executa uma chamada otimizada que busca apenas o dia de hoje
+   */
   // Efeito para buscar dados quando o componente é montado
   useEffect(() => {
-    fetchUsageData();
-  }, [fetchUsageData]);
+    // Se não tiver dados no cache, buscar do servidor
+    if (!usageData) {
+      fetchData();
+    }
+    // Não incluir usageData como dependência para evitar atualizações automáticas
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Calcular custos dos últimos 7 dias
+  function calculateLast7DaysCosts(costData: any[]): number {
+    if (!costData || !Array.isArray(costData) || costData.length === 0) {
+      return 0;
+    }
+    
+    // Usar UTC para consistência com a API da OpenAI
+    const now = new Date();
+    
+    // Data de início: início do dia 7 dias atrás (incluindo hoje)
+    const startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 6, 0, 0, 0));
+    
+    // Data de fim: final do dia de hoje
+    const endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+    
+    // Timestamp para comparação
+    const startTimestamp = Math.floor(startDate.getTime() / 1000);
+    const endTimestamp = Math.floor(endDate.getTime() / 1000);
+    
+    console.log(`Calculando custos para os últimos 7 dias: ${startDate.toISOString()} até ${endDate.toISOString()}`);
+    
+    // Usar um Set para rastrear timestamps já processados e evitar duplicação
+    const processedBuckets = new Set<number>();
+    
+    // Total de custos
+    let totalCost = 0;
+    
+    // Processar cada item, verificando se está dentro do período
+    for (const item of costData) {
+      // Verificar se o bucket está dentro do período desejado
+      const bucketStart = item.bucket?.start_time;
+      if (!bucketStart || typeof bucketStart !== 'number') continue;
+      
+      // Já processou este bucket? Pular para evitar duplicação
+      if (processedBuckets.has(bucketStart)) continue;
+      
+      // Adicionar ao conjunto de buckets processados
+      processedBuckets.add(bucketStart);
+      
+      // Verificar se o bucket está dentro do período de 7 dias
+      if (bucketStart >= startTimestamp && bucketStart <= endTimestamp) {
+        // Adicionar ao custo total com verificação de tipo
+        if (item.amount?.value) {
+          const value = typeof item.amount.value === 'number' 
+            ? item.amount.value 
+            : parseFloat(item.amount.value || '0');
+          
+          // Evitar NaN
+          if (!isNaN(value)) {
+            totalCost += value;
+          }
+        }
+      }
+    }
+    
+    // Arredondar para 2 casas decimais
+    totalCost = Math.round(totalCost * 100) / 100;
+    
+    console.log(`Total de custos calculados para os últimos 7 dias: $${totalCost.toFixed(2)}`);
+    
+    return totalCost;
+  }
 
   return {
     usageData,
     isLoading,
     error,
-    refreshData: fetchUsageData,
-    syncWithSupabase,
+    refreshData: fetchData,
+    syncCompletionsData,
+    syncCostData,
+    syncTodayData,
     exportData
   };
 } 

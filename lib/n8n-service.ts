@@ -1,5 +1,4 @@
 import type { N8NAgent, N8NWorkflow } from '@/types/n8n'
-import { createClient } from '@supabase/supabase-js'
 
 // Determine if we're running in a server or browser context
 const isServer = typeof window === 'undefined'
@@ -9,132 +8,30 @@ export interface OpenAICost {
   timestamp: string;
   model: string;
   tokens: number;
-  promptTokens?: number;
-  completionTokens?: number;
   cost: number;
-  workflowId?: string;
-  workflowName?: string;
-  nodeId?: string;
-  nodeName?: string;
-  executionId?: string;
 }
 
 class N8NService {
-  /**
-   * Get the N8N API URL
-   * @returns {string}
-   */
-  getN8NApiUrl(): string {
-    // Check if we're in a browser (client-side) or server-side
-    const isBrowser = typeof window !== 'undefined';
-    const apiUrl = process.env.NEXT_PUBLIC_N8N_API_URL;
-    
-    console.log(`N8N API URL: ${apiUrl || 'NÃO DEFINIDO'}`);
-    return apiUrl || '';
-  }
-  
-  /**
-   * Get the N8N API Key
-   * @returns {string}
-   */
-  getN8NApiKey(): string {
-    const apiKey = process.env.NEXT_PUBLIC_N8N_API_KEY;
-    console.log(`N8N API Key: ${apiKey ? 'CONFIGURADO (não exibido por segurança)' : 'NÃO DEFINIDO'}`);
-    return apiKey || '';
+  // Get the base URL for API calls, automatically detecting client vs server context
+  private getApiBaseUrl(): string {
+    // Retornar uma string vazia para usar a API local do Next.js
+    // com URLs relativas como /api/n8n/...
+    return '';
   }
 
-  /**
-   * Obtém a lista de workflows do N8N
-   * @returns {Promise<N8NWorkflow[]>}
-   */
   async getWorkflows(): Promise<N8NWorkflow[]> {
     try {
-      console.log('Buscando todos os workflows do N8N...');
+      console.log("Buscando workflows via API do Next.js");
+      const n8nApiUrl = process.env.NEXT_PUBLIC_N8N_API_URL;
+      console.log("N8N API URL:", n8nApiUrl || "NÃO CONFIGURADO");
       
-      // Verificar se temos as configurações necessárias
-      const baseUrl = this.getN8NApiUrl();
-      const apiKey = this.getN8NApiKey();
+      // Constrói a URL relativa para a API do Next.js
+      const url = `/api/n8n/workflows`;
+      console.log("URL da requisição:", url);
       
-      if (!baseUrl || !apiKey) {
-        console.error('N8N API URL ou API Key não configurados:', {
-          baseUrl: baseUrl ? 'Configurado' : 'Não configurado',
-          apiKey: apiKey ? 'Configurado' : 'Não configurado'
-        });
-        return [];
-      }
-      
-      console.log(`Fazendo requisição GET para ${baseUrl}/workflows`);
-      
-      const response = await fetch(`${baseUrl}/workflows`, {
-        method: 'GET',
+      // Não precisamos adicionar headers pois a API do Next.js lida com isso
+      const response = await fetch(url, {
         headers: {
-          'Accept': 'application/json',
-          'X-N8N-API-KEY': apiKey
-        }
-      });
-
-      if (!response.ok) {
-        const statusText = response.statusText || 'Erro desconhecido';
-        console.error(`Erro ao buscar workflows: ${response.status} - ${statusText}`);
-        try {
-          const errorData = await response.text();
-          console.error('Detalhes do erro:', errorData);
-        } catch (e) {
-          console.error('Não foi possível ler o corpo da resposta de erro');
-        }
-        return [];
-      }
-      
-      const responseData = await response.json();
-      
-      // Verificar se a resposta tem o formato esperado (com propriedade 'data')
-      if (!responseData) {
-        console.error('Resposta vazia da API N8N');
-        return [];
-      }
-      
-      // Verificar se a resposta tem o formato { data: [...] }
-      const workflows = responseData.data || responseData;
-      
-      if (!Array.isArray(workflows)) {
-        console.error('Resposta não contém um array de workflows:', responseData);
-        return [];
-      }
-      
-      console.log(`Obtidos ${workflows.length} workflows`);
-      
-      return workflows as N8NWorkflow[];
-    } catch (error) {
-      console.error('Erro ao buscar workflows:', error);
-      return [];
-    }
-  }
-
-  async getWorkflowExecutions(workflowId: string): Promise<any[]> {
-    try {
-      console.log(`Buscando execuções para o workflow ${workflowId}`);
-      
-      // Verificar se temos as configurações necessárias
-      const baseUrl = this.getN8NApiUrl();
-      const apiKey = this.getN8NApiKey();
-      
-      if (!baseUrl || !apiKey) {
-        console.error('N8N API URL ou API Key não configurados:', {
-          baseUrl: baseUrl ? 'Configurado' : 'Não configurado',
-          apiKey: apiKey ? 'Configurado' : 'Não configurado'
-        });
-        return [];
-      }
-      
-      // URL da API do N8N para buscar execuções de um workflow específico
-      const apiUrl = `${baseUrl}/executions?workflowId=${workflowId}&limit=20&includeData=true`;
-      console.log(`Fazendo requisição GET para ${apiUrl}`);
-      
-      const response = await fetch(apiUrl, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'X-N8N-API-KEY': apiKey,
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
           'Expires': '0'
@@ -142,864 +39,522 @@ class N8NService {
       });
 
       if (!response.ok) {
-        const statusText = response.statusText || 'Erro desconhecido';
-        console.error(`Erro ao buscar execuções: ${response.status} - ${statusText}`);
-        try {
-          const errorData = await response.text();
-          console.error('Detalhes do erro:', errorData);
-        } catch (e) {
-          console.error('Não foi possível ler o corpo da resposta de erro');
+        const errorText = await response.text();
+        console.error("Erro na resposta:", errorText);
+        throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (!data || !data.data) {
+        console.error("Formato de dados inválido:", data);
+        throw new Error("Formato de dados inválido recebido da API");
+      }
+      
+      console.log(`Encontrados ${data.data.length} workflows`);
+      return data.data;
+    } catch (error) {
+      console.error("Error fetching workflows:", error);
+      throw error;
+    }
+  }
+
+  async getWorkflowExecutions(workflowId: string): Promise<any[]> {
+    try {
+      console.log(`Buscando execuções para o workflow ${workflowId}`);
+      
+      // Aumentar significativamente o limite para obter todas as execuções possíveis
+      // URL relativa para a API do Next.js
+      const url = `/api/n8n/executions?workflowId=${workflowId}&limit=100`;
+      console.log("URL da requisição:", url);
+      
+      // Não precisamos adicionar headers de autenticação pois a API do Next.js lida com isso
+      const response = await fetch(url, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
         }
-        return [];
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Erro na resposta:", errorText);
+        throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
       }
       
-      const responseData = await response.json();
+      const data = await response.json();
       
-      // Verificar se a resposta tem o formato esperado
-      if (!responseData) {
-        console.error("Resposta vazia da API N8N");
-        return [];
+      if (!data || !data.data) {
+        console.error("Formato de dados inválido:", data);
+        throw new Error("Formato de dados inválido recebido da API");
       }
       
-      // Verificar se a resposta tem o formato { data: [...] }
-      const executions = responseData.data || responseData;
+      // Garantir que todos os itens têm timestamps válidos
+      const validatedData = data.data.map((item: any) => {
+        // Se não tiver startedAt definido, tentar usar outros campos de data ou um valor padrão
+        if (!item.startedAt) {
+          item.startedAt = item.stoppedAt || item.updatedAt || item.createdAt || new Date().toISOString();
+        }
+        return item;
+      });
       
-      if (!Array.isArray(executions)) {
-        console.error("Formato de dados inválido:", responseData);
-        return [];
-      }
-      
-      console.log(`Encontradas ${executions.length} execuções para o workflow ${workflowId}`);
-      return executions;
+      console.log(`Encontradas ${validatedData.length} execuções para o workflow ${workflowId}`);
+      return validatedData;
     } catch (error) {
       console.error(`Error fetching executions for workflow ${workflowId}:`, error);
       return [];
     }
   }
 
+  // Método dedicado para contar execuções diárias precisamente
+  async getWorkflowDailyExecutions(workflowId: string): Promise<number> {
+    try {
+      console.log(`Buscando contagem precisa de execuções diárias para ${workflowId}`);
+      
+      // Primeiro, tentar usar a API de contagem com filtro de data
+      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      const countUrl = `/api/n8n/executions/count?workflowId=${workflowId}&date=${today}`;
+      
+      console.log(`Tentando API de contagem: ${countUrl}`);
+      
+      try {
+        const countResponse = await fetch(countUrl, {
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        });
+        
+        if (countResponse.ok) {
+          const countData = await countResponse.json();
+          if (countData && typeof countData.count === 'number') {
+            console.log(`API de contagem retornou ${countData.count} execuções hoje para ${workflowId}`);
+            return countData.count;
+          }
+        }
+      } catch (countError) {
+        console.error('Erro ao usar API de contagem:', countError);
+        // Continuar para o método alternativo
+      }
+      
+      console.log('API de contagem não disponível ou retornou erro, usando método alternativo');
+      
+      // Método alternativo: buscar execuções e filtrar
+      const url = `/api/n8n/executions?workflowId=${workflowId}&limit=250`;
+      
+      const response = await fetch(url, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
+      
+      if (!response.ok) {
+        console.error(`Erro ao buscar execuções para contagem: ${response.status}`);
+        return 0;
+      }
+      
+      const data = await response.json();
+      
+      if (!data || !data.data || !Array.isArray(data.data)) {
+        console.error("Formato de dados inválido na resposta");
+        return 0;
+      }
+      
+      // Filtrar para execuções de hoje
+      const todayExecutions = data.data.filter((exec: any) => {
+        if (!exec || !exec.startedAt) return false;
+        const execDate = new Date(exec.startedAt).toISOString().split('T')[0];
+        return execDate === today;
+      });
+      
+      console.log(`Método alternativo: ${todayExecutions.length} execuções hoje para ${workflowId}`);
+      return todayExecutions.length;
+      
+    } catch (error) {
+      console.error(`Erro na contagem precisa:`, error);
+      return 0;
+    }
+  }
+
   // Extrai dados de uso da OpenAI das execuções do n8n
   async extractOpenAICosts(executions: any[] = []): Promise<OpenAICost[]> {
-    const costs: OpenAICost[] = [];
+    console.log(`Analisando ${executions.length} execuções para extrair custos da OpenAI`);
+    
+    if (!executions || executions.length === 0) {
+      console.log('Nenhuma execução para analisar');
+      return [];
+    }
 
-    console.log(`===== Iniciando extração de custos OpenAI - ${executions.length} execuções =====`);
-    
-    if (executions.length === 0) {
-      console.log('Nenhuma execução para processar');
-      return costs;
-    }
-    
-    // Log da primeira execução para debug
-    if (executions[0]) {
-      console.log('Exemplo de estrutura da primeira execução:');
-      console.log('ID:', executions[0].id);
-      console.log('Workflow ID:', executions[0].workflowId);
-      console.log('Workflow Name:', executions[0].workflowName);
-      console.log('Tem data?', !!executions[0].data);
-      console.log('Tem resultData?', executions[0].data && !!executions[0].data.resultData);
-      console.log('Tem runData?', executions[0].data && executions[0].data.resultData && !!executions[0].data.resultData.runData);
-      
-      // Verificar se temos dados de execução
-      if (!executions[0].data || !executions[0].data.resultData || !executions[0].data.resultData.runData) {
-        console.log('ALERTA: A primeira execução não possui dados de resultados completos.');
-        
-        // Verificar se temos o parâmetro includeData
-        if (!executions[0].data) {
-          console.log('ALERTA: Parâmetro includeData pode não estar sendo passado corretamente na chamada da API.');
-        }
-      } else {
-        // Listar os nós disponíveis na primeira execução
-        const runData = executions[0].data.resultData.runData;
-        const nodeNames = Object.keys(runData);
-        console.log(`Nós disponíveis na primeira execução: ${nodeNames.join(', ')}`);
-        
-        // Verificar se há nós que parecem ser da OpenAI
-        const potentialAINodes = nodeNames.filter(name => this.isLikelyOpenAINode(name));
-        if (potentialAINodes.length > 0) {
-          console.log(`Nós potencialmente relacionados à OpenAI: ${potentialAINodes.join(', ')}`);
-          
-          // Adicionar mais detalhes sobre os nós potenciais da OpenAI
-          for (const nodeName of potentialAINodes) {
-            console.log(`\nDetalhes do nó potencial OpenAI: ${nodeName}`);
-            const nodeData = runData[nodeName];
-            if (nodeData && Array.isArray(nodeData) && nodeData.length > 0) {
-              console.log(`- Número de execuções do nó: ${nodeData.length}`);
-              console.log(`- Tem data? ${!!nodeData[0].data}`);
-              
-              // Tentar encontrar dados OpenAI
-              const openAIData = this.findOpenAIData(nodeData[0], 0);
-              if (openAIData) {
-                console.log('- Dados OpenAI encontrados neste nó!');
-                console.log('- Amostra dos dados:', JSON.stringify(openAIData).substring(0, 300) + '...');
-              } else {
-                console.log('- Nenhum dado OpenAI encontrado neste nó');
-                console.log('- Estrutura completa do nó:', JSON.stringify(nodeData[0]).substring(0, 500) + '...');
-              }
-            }
-          }
-        } else {
-          console.log('Nenhum nó parece estar relacionado à OpenAI');
-        }
-      }
-    }
-    
+    const costs: OpenAICost[] = [];
+    let openaiCounter = 0;
+
+    // Para cada execução
     for (const execution of executions) {
       try {
-        const executionId = execution.id;
-        const workflowId = execution.workflowId;
-        const workflowName = execution.workflowName || 'Unknown Workflow';
-        const timestamp = execution.startedAt || execution.stoppedAt || new Date().toISOString();
+        console.log(`\n----- Analisando execução ID: ${execution.id} -----`);
         
-        console.log(`----- Analisando execução ID: ${executionId} (${workflowName}) -----`);
-        
-        // Verificar se temos dados de execução
-        if (!execution.data || !execution.data.resultData || !execution.data.resultData.runData) {
-          console.log(`Execução ${executionId} não possui dados de resultados.`);
+        // Verificar se temos data
+        if (!execution.data) {
+          console.log(`Execução ${execution.id} não possui campo 'data'`);
           continue;
         }
 
-        const runData = execution.data.resultData.runData;
-        const nodeNames = Object.keys(runData);
-        
-        console.log(`Execução ${executionId} possui runData com ${nodeNames.length} nós`);
-        
-        // Para cada nó no workflow
-        for (const nodeName of nodeNames) {
-          try {
-            // Verificar se o nó parece ser relacionado à OpenAI
-            const isLikelyAINode = this.isLikelyOpenAINode(nodeName);
-            const nodeData = runData[nodeName];
+        // Verificar a estrutura da execução
+        if (execution.data.resultData && execution.data.resultData.runData) {
+          const runData = execution.data.resultData.runData;
+          console.log(`Execução ${execution.id} possui runData com ${Object.keys(runData).length} nós`);
+          
+          // Itera sobre cada nó na execução
+          for (const nodeName in runData) {
+            if (!runData[nodeName] || !Array.isArray(runData[nodeName])) continue;
             
-            // Se não tivermos dados ou não for um array, pular
-            if (!nodeData || !Array.isArray(nodeData)) {
-              continue;
-            }
+            console.log(`\nAnalisando nó '${nodeName}' que possui ${runData[nodeName].length} execuções de nó`);
             
-            console.log(`Analisando nó '${nodeName}' que possui ${nodeData.length} execuções de nó${isLikelyAINode ? ' (potencial nó OpenAI)' : ''}`);
-            
-            // Para cada execução deste nó
-            for (const nodeExecution of nodeData) {
-              try {
-                // Verificar se temos dados de saída para analisar
-                if (!nodeExecution.data) {
+            // Itera sobre cada execução do nó
+            for (let i = 0; i < runData[nodeName].length; i++) {
+              const nodeExecution = runData[nodeName][i];
+              
+              // Verifica se temos dados de resultado para o nó
+              if (!nodeExecution.data || !nodeExecution.data.hasOwnProperty('json')) {
+                console.log(`Execução ${i} do nó '${nodeName}' não tem dados JSON válidos`);
+                continue;
+              }
+              
+              // Processa o JSON para verificar se é uma chamada à OpenAI
+              const jsonData = nodeExecution.data.json;
+              
+              // Logs para debugging
+              console.log(`Analisando JSON do nó '${nodeName}', execução ${i}:`);
+              console.log('Keys no JSON:', Object.keys(jsonData).join(', '));
+              
+              // Verifica se estamos lidando com uma resposta da API da OpenAI
+              if (this.isOpenAIResponse(jsonData)) {
+                openaiCounter++;
+                console.log(`\n>>> Encontrada chamada OpenAI #${openaiCounter} no nó '${nodeName}', execução ${i}`);
+                
+                // Extrai informações do modelo e tokens
+                const { model, tokens } = this.extractModelInfo(jsonData);
+                if (!model || tokens === 0) {
+                  console.log('Modelo ou tokens não encontrados, pulando...');
                   continue;
                 }
                 
-                // MELHORIA: Verificar diretamente no objeto nodeExecution
-                const directJsonData = this.findOpenAIData(nodeExecution, 0);
-                if (directJsonData) {
-                  console.log(`>>> Dados OpenAI encontrados diretamente no nó '${nodeName}'`);
-                  
-                  try {
-                    // Extrair informações do modelo
-                    const modelInfo = this.extractDetailedModelInfo(directJsonData);
-                    const normalizedModel = this.normalizeModelName(modelInfo.model);
-                    const cost = this.calculateDetailedCost(normalizedModel, modelInfo.promptTokens, modelInfo.completionTokens);
-                    
-                    // Criar registro de custo
-                    const costRecord: OpenAICost = {
-                      timestamp,
-                      model: normalizedModel,
-                      tokens: modelInfo.totalTokens,
-                      promptTokens: modelInfo.promptTokens,
-                      completionTokens: modelInfo.completionTokens,
-                      cost,
-                      workflowId,
-                      workflowName,
-                      nodeId: nodeExecution.node,
-                      nodeName,
-                      executionId
-                    };
-                    
-                    costs.push(costRecord);
-                    console.log(`✅ Custo extraído: ${normalizedModel}, ${modelInfo.totalTokens} tokens, $${cost.toFixed(6)}`);
-                    continue; // Pular para a próxima execução de nó
-                  } catch (directError) {
-                    console.error(`Erro ao processar dados diretos: ${directError}`);
+                // Calcula o custo
+                const cost = tokens * this.modelCostPerToken(model);
+                
+                // Extrai timestamp (ou usa o da execução se não disponível)
+                const timestamp = execution.startedAt || execution.stoppedAt || execution.createdAt || new Date().toISOString();
+                
+                // Adiciona aos custos
+                costs.push({
+                  timestamp,
+                  model,
+                  tokens,
+                  cost
+                });
+                
+                console.log(`Adicionado custo: ${model}, ${tokens} tokens, $${cost.toFixed(6)}`);
+              } else {
+                // Verificações mais profundas em campos específicos
+                if (jsonData.request) {
+                  console.log('Verificando campo request:', Object.keys(jsonData.request).join(', '));
+                  if (this.isOpenAIResponse(jsonData.request)) {
+                    openaiCounter++;
+                    console.log(`\n>>> Encontrada chamada OpenAI #${openaiCounter} em 'request' do nó '${nodeName}', execução ${i}`);
+                    const { model, tokens } = this.extractModelInfo(jsonData.request);
+                    if (model && tokens > 0) {
+                      const cost = tokens * this.modelCostPerToken(model);
+                      const timestamp = execution.startedAt || execution.stoppedAt || execution.createdAt || new Date().toISOString();
+                      costs.push({ timestamp, model, tokens, cost });
+                      console.log(`Adicionado custo: ${model}, ${tokens} tokens, $${cost.toFixed(6)}`);
+                    }
                   }
                 }
                 
-                // Se não encontramos dados diretamente, verificar em main
-                if (!nodeExecution.data.main) {
-                  continue;
+                if (jsonData.response) {
+                  console.log('Verificando campo response:', Object.keys(jsonData.response || {}).join(', '));
+                  if (this.isOpenAIResponse(jsonData.response)) {
+                    openaiCounter++;
+                    console.log(`\n>>> Encontrada chamada OpenAI #${openaiCounter} em 'response' do nó '${nodeName}', execução ${i}`);
+                    const { model, tokens } = this.extractModelInfo(jsonData.response);
+                    if (model && tokens > 0) {
+                      const cost = tokens * this.modelCostPerToken(model);
+                      const timestamp = execution.startedAt || execution.stoppedAt || execution.createdAt || new Date().toISOString();
+                      costs.push({ timestamp, model, tokens, cost });
+                      console.log(`Adicionado custo: ${model}, ${tokens} tokens, $${cost.toFixed(6)}`);
+                    }
+                  }
                 }
                 
-                // Processar cada saída do nó (geralmente temos apenas um item em main[0])
-                const outputs = nodeExecution.data.main;
-                
-                // MELHORIA 1: Procurar em todas as saídas, não apenas a primeira
-                for (let outputIndex = 0; outputIndex < outputs.length; outputIndex++) {
-                  const outputItems = outputs[outputIndex];
-                  
-                  if (!outputItems || !Array.isArray(outputItems)) {
-                    continue;
-                  }
-                  
-                  // Para cada item de saída nesta ramificação
-                  for (let itemIndex = 0; itemIndex < outputItems.length; itemIndex++) {
-                    const item = outputItems[itemIndex];
-                    
-                    // MELHORIA 2: Verificar múltiplos caminhos onde os dados OpenAI podem estar
-                    const jsonData = this.findOpenAIData(item, 0);
-                    
-                    if (jsonData) {
-                      console.log(`>>> Dados OpenAI encontrados no nó '${nodeName}', saída ${outputIndex}, item ${itemIndex}`);
-                      
-                      let model = '';
-                      let tokens = 0;
-                      let promptTokens = 0;
-                      let completionTokens = 0;
-                      
-                      // MELHORIA 3: Extrair detalhes do modelo de várias maneiras possíveis
-                      try {
-                        // Verificar formato detalhado primeiro
-                        if (this.isOpenAIResponse(jsonData)) {
-                          const modelInfo = this.extractDetailedModelInfo(jsonData);
-                          model = modelInfo.model;
-                          tokens = modelInfo.totalTokens;
-                          promptTokens = modelInfo.promptTokens;
-                          completionTokens = modelInfo.completionTokens;
-                          
-                          console.log(`Formato detalhado encontrado: ${model}, ${tokens} tokens (${promptTokens}+${completionTokens})`);
-                        } 
-                        // MELHORIA 4: Tentar formatos alternativos para o modelo e uso de tokens
-                        else if (jsonData.model && (jsonData.usage || jsonData.token_usage)) {
-                          const usage = jsonData.usage || jsonData.token_usage || {};
-                          model = jsonData.model;
-                          tokens = usage.total_tokens || 0;
-                          promptTokens = usage.prompt_tokens || 0;
-                          completionTokens = usage.completion_tokens || 0;
-                          
-                          console.log(`Formato alternativo encontrado: ${model}, ${tokens} tokens`);
+                // Verificar em campos de dados aninhados ou arrays
+                if (jsonData.data && typeof jsonData.data === 'object') {
+                  console.log('Verificando campo data');
+                  if (Array.isArray(jsonData.data)) {
+                    console.log(`data é um array com ${jsonData.data.length} itens`);
+                    for (let j = 0; j < jsonData.data.length; j++) {
+                      if (this.isOpenAIResponse(jsonData.data[j])) {
+                        openaiCounter++;
+                        console.log(`\n>>> Encontrada chamada OpenAI #${openaiCounter} em 'data[${j}]' do nó '${nodeName}', execução ${i}`);
+                        const { model, tokens } = this.extractModelInfo(jsonData.data[j]);
+                        if (model && tokens > 0) {
+                          const cost = tokens * this.modelCostPerToken(model);
+                          const timestamp = execution.startedAt || execution.stoppedAt || execution.createdAt || new Date().toISOString();
+                          costs.push({ timestamp, model, tokens, cost });
+                          console.log(`Adicionado custo: ${model}, ${tokens} tokens, $${cost.toFixed(6)}`);
                         }
-                        // MELHORIA 5: Procurar padrões específicos do N8N LangChain
-                        else if (jsonData.llmOutput || jsonData.tokenUsage || jsonData.metadata?.tokenUsage) {
-                          const tokenData = jsonData.tokenUsage || jsonData.metadata?.tokenUsage || jsonData.llmOutput?.tokenUsage || {};
-                          
-                          if (tokenData) {
-                            // Tentar encontrar o nome do modelo
-                            model = jsonData.model || jsonData._modelName || jsonData.metadata?.model || 'unknown';
-                            // Obter contagens de tokens
-                            promptTokens = tokenData.promptTokens || tokenData.prompt_tokens || 0;
-                            completionTokens = tokenData.completionTokens || tokenData.completion_tokens || 0;
-                            tokens = tokenData.totalTokens || tokenData.total_tokens || (promptTokens + completionTokens);
-                            
-                            console.log(`Formato LangChain encontrado: ${model}, ${tokens} tokens`);
-                          }
-                        }
-                        // MELHORIA 6: Verificar formato mais simples
-                        else if (jsonData.token_count || jsonData.totalTokens || jsonData.total_tokens) {
-                          tokens = jsonData.token_count || jsonData.totalTokens || jsonData.total_tokens || 0;
-                          model = jsonData.model_name || jsonData.model || 'unknown';
-                          
-                          // Muitas integrações não dividem tokens entre prompt/completion
-                          promptTokens = jsonData.prompt_tokens || Math.round(tokens * 0.7);
-                          completionTokens = jsonData.completion_tokens || (tokens - promptTokens);
-                          
-                          console.log(`Formato simples encontrado: ${model}, ${tokens} tokens`);
-                        }
-                        // MELHORIA 7: Última tentativa para nós de serviços personalizados
-                        else if (nodeName.toLowerCase().includes('openai') || nodeName.toLowerCase().includes('gpt')) {
-                          // Para nós identificados por nome mas sem informações claras
-                          // Fazer suposição com base no tipo de nó
-                          model = jsonData.model || 'gpt-3.5-turbo';
-                          
-                          // Estimar tokens com base no tamanho da resposta
-                          let inputText = '';
-                          let outputText = '';
-                          
-                          if (typeof jsonData.input === 'string') inputText = jsonData.input;
-                          else if (typeof jsonData.prompt === 'string') inputText = jsonData.prompt;
-                          else if (typeof jsonData.messages === 'object') {
-                            inputText = JSON.stringify(jsonData.messages);
-                          }
-                          
-                          if (typeof jsonData.output === 'string') outputText = jsonData.output;
-                          else if (typeof jsonData.content === 'string') outputText = jsonData.content;
-                          else if (typeof jsonData.text === 'string') outputText = jsonData.text;
-                          else if (typeof jsonData.response === 'string') outputText = jsonData.response;
-                          
-                          // Estimativa de tokens (aproximado)
-                          promptTokens = Math.round(inputText.length / 4) || 0;
-                          completionTokens = Math.round(outputText.length / 4) || 0;
-                          tokens = promptTokens + completionTokens;
-                          
-                          console.log(`Usando estimativa de tokens: ${tokens} tokens (${promptTokens}+${completionTokens})`);
-                        }
-                        else {
-                          console.log('Dados incompletos, não foi possível extrair informações de uso');
-                          continue;
-                        }
-                        
-                        // Calcular custo com base no modelo e tokens
-                        const normalizedModel = this.normalizeModelName(model);
-                        const cost = this.calculateDetailedCost(normalizedModel, promptTokens, completionTokens);
-                        
-                        // Criar registro de custo
-                        const costRecord: OpenAICost = {
-                          timestamp,
-                          model: normalizedModel,
-                          tokens,
-                          promptTokens,
-                          completionTokens,
-                          cost,
-                          workflowId,
-                          workflowName,
-                          nodeId: nodeExecution.node,
-                          nodeName,
-                          executionId
-                        };
-                        
-                        costs.push(costRecord);
-                        console.log(`✅ Custo extraído: ${normalizedModel}, ${tokens} tokens, $${cost.toFixed(6)}`);
-                      } catch (detailError) {
-                        console.error(`Erro ao extrair detalhes do modelo: ${detailError}`);
+                      }
+                    }
+                  } else {
+                    if (this.isOpenAIResponse(jsonData.data)) {
+                      openaiCounter++;
+                      console.log(`\n>>> Encontrada chamada OpenAI #${openaiCounter} em 'data' do nó '${nodeName}', execução ${i}`);
+                      const { model, tokens } = this.extractModelInfo(jsonData.data);
+                      if (model && tokens > 0) {
+                        const cost = tokens * this.modelCostPerToken(model);
+                        const timestamp = execution.startedAt || execution.stoppedAt || execution.createdAt || new Date().toISOString();
+                        costs.push({ timestamp, model, tokens, cost });
+                        console.log(`Adicionado custo: ${model}, ${tokens} tokens, $${cost.toFixed(6)}`);
                       }
                     }
                   }
                 }
-              } catch (nodeExecutionError) {
-                console.error(`Erro ao processar execução do nó ${nodeName}: ${nodeExecutionError}`);
               }
             }
-          } catch (nodeError) {
-            console.error(`Erro ao processar nó ${nodeName}: ${nodeError}`);
+          }
+        } else {
+          console.log(`Execução ${execution.id} não possui estrutura de resultData.runData esperada`);
+          console.log('Keys disponíveis na execução:', Object.keys(execution).join(', '));
+          if (execution.data) {
+            console.log('Keys disponíveis em execution.data:', Object.keys(execution.data).join(', '));
           }
         }
-      } catch (executionError) {
-        console.error(`Erro ao processar execução ${execution.id}: ${executionError}`);
+      } catch (error) {
+        console.error(`Erro ao processar execução:`, error);
       }
     }
-    
-    console.log(`===== Resumo: Encontradas ${costs.length} chamadas OpenAI, extraídos ${costs.length} registros de custo =====`);
-    
+
+    console.log(`\n===== Resumo: Encontradas ${openaiCounter} chamadas OpenAI, extraídos ${costs.length} registros de custo =====`);
     return costs;
   }
-  
-  // Melhore a detecção de nós relacionados ao OpenAI
-  private isLikelyOpenAINode(nodeName: string): boolean {
-    const lowerName = nodeName.toLowerCase();
-    
-    // Lista expandida de termos relacionados à OpenAI e LLMs
-    const openaiTerms = [
-      'openai', 'gpt', 'davinci', 'llm', 'chatgpt', 'completion', 
-      'embedding', 'ai agent', 'language model', 'text classifier', 
-      'chat model', 'ai model', 'chat completion', 'text completion',
-      // Adicionar modelos específicos
-      'gpt-4', 'gpt-4o', 'gpt-4o-mini', 'gpt-3.5', 'gpt-3.5-turbo', 
-      'gpt-vision', 'vision', 'dall-e', 'dall-e-3', 'dall-e-2',
-      'whisper', 'audio', 'ada', 'babbage', 'curie', 'text-embedding',
-      'codex', 'claude', 'anthropic', 'mistral', 'gemini', 'llama',
-      // Termos genéricos adicionais para capturar mais nós
-      'image', 'generate image', 'text to image', 'speech to text',
-      'text to speech', 'assistant', 'summarize', 'summarization',
-      'translation', 'classification', 'sentiment', 'analyze',
-      // Termos específicos do N8N
-      'chat', 'model', 'ai', 'ia', 'intelligence', 'artificial', 'language',
-      'token', 'prompt', 'completion', 'response', 'message', 'conversation',
-      'text', 'content', 'generate', 'generation', 'answer', 'question',
-      'chat memory', 'memory', 'context', 'history', 'conversation'
-    ];
-    
-    return openaiTerms.some(term => lowerName.includes(term));
-  }
-  
-  // Melhorar a função de busca para encontrar dados de OpenAI
-  private findOpenAIData(obj: any, depth: number = 0): any {
-    // Limite de profundidade para evitar loops infinitos ou busca muito profunda
-    if (depth > 10) return null;
-    
-    // Se for null ou indefinido, encerrar
-    if (obj === null || obj === undefined) return null;
-    
-    // Se for string, número ou booleano, não é um objeto OpenAI
-    if (typeof obj !== 'object') return null;
-    
-    // MELHORIA ADICIONAL: Verificar se é uma resposta direta da OpenAI
-    if (obj.model && obj.usage && typeof obj.usage === 'object') {
-      console.log('Encontrado objeto OpenAI direto:', JSON.stringify(obj).substring(0, 200) + '...');
-      return obj;
-    }
-    
-    // Se for um array, verificar cada item
-    if (Array.isArray(obj)) {
-      // Para cada item do array
-      for (let i = 0; i < obj.length; i++) {
-        const result = this.findOpenAIData(obj[i], depth + 1);
-        if (result) return result;
-      }
-      return null;
-    }
-    
-    // MELHORIA 1: Verificar padrões de resposta OpenAI diretamente
-    if (this.isOpenAIResponse(obj)) {
-      console.log('Encontrado objeto OpenAI via isOpenAIResponse:', JSON.stringify(obj).substring(0, 200) + '...');
-      return obj;
-    }
-    
-    // MELHORIA 2: Verificar padrões LangChain ou outros formatos comuns
-    if (
-      (obj.tokenUsage || obj.llmOutput?.tokenUsage || obj.metadata?.tokenUsage) &&
-      (obj.model || obj._modelName || obj.metadata?.model)
-    ) {
-      console.log('Encontrado objeto OpenAI via LangChain:', JSON.stringify(obj).substring(0, 200) + '...');
-      return obj;
-    }
-    
-    // MELHORIA 3: Verificar se há campos relacionados a tokens ou modelos
-    if (
-      (obj.token_count !== undefined || 
-       obj.totalTokens !== undefined || 
-       obj.total_tokens !== undefined) &&
-      (obj.model !== undefined || obj.model_name !== undefined)
-    ) {
-      console.log('Encontrado objeto OpenAI via tokens/model:', JSON.stringify(obj).substring(0, 200) + '...');
-      return obj;
-    }
-    
-    // MELHORIA 4: Verificar AI21, Anthropic, Claude, ou outros formatos semelhantes
-    if (
-      obj.usage && 
-      (obj.model || obj.model_id || obj.model_name) && 
-      (obj.completion_id || obj.request_id)
-    ) {
-      console.log('Encontrado objeto OpenAI via AI21/Anthropic:', JSON.stringify(obj).substring(0, 200) + '...');
-      return obj;
-    }
-    
-    // MELHORIA ADICIONAL: Verificar se há campos específicos do N8N LangChain
-    if (obj.node && obj.node.includes('openai') && obj.data && typeof obj.data === 'object') {
-      console.log('Encontrado nó OpenAI no N8N:', JSON.stringify(obj).substring(0, 200) + '...');
-      return obj.data;
-    }
-    
-    // MELHORIA 5: Buscar em campos específicos que podem conter resposta da OpenAI
-    const likelyFields = [
-      'json', 'data', 'result', 'output', 'response', 'openai', 
-      'aiResponse', 'completion', 'message', 'chatCompletion',
-      'llmResult', 'llmOutput', 'metadata', 'nodeData', 'ai',
-      'content', 'choices', 'parameters', 'request', 'body'
-    ];
-    
-    for (const field of likelyFields) {
-      if (obj[field] && typeof obj[field] === 'object') {
-        const result = this.findOpenAIData(obj[field], depth + 1);
-        if (result) return result;
-      }
-    }
-    
-    // MELHORIA 6: Verificar outros campos do objeto
-    for (const key in obj) {
-      // Pular campos já verificados
-      if (likelyFields.includes(key)) continue;
-      
-      // Verificar se o valor é um objeto
-      if (obj[key] && typeof obj[key] === 'object') {
-        const result = this.findOpenAIData(obj[key], depth + 1);
-        if (result) return result;
-      }
-    }
-    
-    return null;
-  }
-  
-  // Melhorar a detecção de resposta da OpenAI
+
+  // Verifica se um objeto resposta é de uma chamada à OpenAI
   private isOpenAIResponse(json: any): boolean {
-    // Verificar se o objeto é válido
-    if (!json || typeof json !== 'object') {
-      return false;
+    if (!json) return false;
+    
+    // Log de debugging para ver o que estamos analisando
+    const hasChoices = json.choices !== undefined;
+    const hasUsage = json.usage !== undefined;
+    const hasModel = json.model !== undefined;
+    const hasEmbeddingData = json.data !== undefined && Array.isArray(json.data) && json.data.length > 0 && json.data[0].embedding !== undefined;
+    const hasOpenAIUrl = json.url && typeof json.url === 'string' && json.url.includes('openai');
+    const hasApiUrl = json.api_url && typeof json.api_url === 'string' && json.api_url.includes('openai');
+    const hasOpenAIHeader = json.headers && 
+                          (json.headers['authorization']?.toLowerCase().includes('openai') || 
+                           json.headers['Authorization']?.toLowerCase().includes('openai'));
+    
+    // Verifica pelos padrões comuns nas respostas da OpenAI
+    const isOpenAI = (
+      // Para respostas de completions/chat
+      hasChoices ||
+      // Para embeddings
+      hasEmbeddingData ||
+      // Para usage explícito
+      hasUsage ||
+      // Outros indicadores de uso da OpenAI
+      hasModel ||
+      // Verifica URL em parâmetros de requisição
+      hasOpenAIUrl ||
+      hasApiUrl ||
+      // Verifica headers que possam indicar uso da OpenAI
+      hasOpenAIHeader
+    );
+    
+    if (isOpenAI) {
+      console.log('Detectada chamada OpenAI com os seguintes indicadores:', {
+        hasChoices,
+        hasEmbeddingData,
+        hasUsage,
+        hasModel,
+        hasOpenAIUrl,
+        hasApiUrl,
+        hasOpenAIHeader
+      });
     }
     
-    // Log para debug
-    console.log('Verificando se é resposta OpenAI:', JSON.stringify(json).substring(0, 300) + '...');
-    
-    // Padrão 1: Resposta de Completions API ou Chat Completions API
-    if (
-      (json.model || json.model_name) && 
-      (
-        (json.usage && (
-          json.usage.total_tokens !== undefined || 
-          (json.usage.prompt_tokens !== undefined && json.usage.completion_tokens !== undefined)
-        )) ||
-        (json.token_usage && (
-          json.token_usage.total_tokens !== undefined ||
-          (json.token_usage.prompt_tokens !== undefined && json.token_usage.completion_tokens !== undefined)
-        ))
-      )
-    ) {
-      console.log('✅ Detectado padrão 1: Resposta padrão da OpenAI API');
-      return true;
-    }
-    
-    // Padrão 2: Resposta LangChain
-    if (
-      (
-        (json.tokenUsage && (json.tokenUsage.totalTokens || json.tokenUsage.total_tokens)) ||
-        (json.llmOutput && json.llmOutput.tokenUsage) ||
-        (json.metadata && json.metadata.tokenUsage)
-      ) &&
-      (json.model || json._modelName || json.metadata?.model)
-    ) {
-      console.log('✅ Detectado padrão 2: Resposta LangChain');
-      return true;
-    }
-    
-    // Padrão 3: Resposta personalizada com informações de token
-    if (
-      (
-        json.token_count !== undefined || 
-        json.totalTokens !== undefined || 
-        json.total_tokens !== undefined
-      ) &&
-      (
-        json.model !== undefined || 
-        json.model_name !== undefined
-      )
-    ) {
-      console.log('✅ Detectado padrão 3: Resposta personalizada com tokens');
-      return true;
-    }
-    
-    // Padrão 4: Resposta do N8N LangChain
-    if (
-      json.message &&
-      json.message.content &&
-      json.modelId &&
-      (json.modelId.includes('gpt') || json.modelId.includes('openai'))
-    ) {
-      console.log('✅ Detectado padrão 4: Resposta N8N LangChain');
-      return true;
-    }
-    
-    // Padrão 5: Verificar se há choices com mensagens (formato típico de Chat Completions)
-    if (
-      json.choices && 
-      Array.isArray(json.choices) && 
-      json.choices.length > 0 &&
-      (
-        json.choices[0].message || 
-        json.choices[0].text || 
-        json.choices[0].content
-      )
-    ) {
-      console.log('✅ Detectado padrão 5: Resposta com choices e mensagens');
-      return true;
-    }
-    
-    // Padrão 6: Verificar se há campos específicos de modelos OpenAI
-    if (
-      json.id && 
-      (
-        json.id.startsWith('chatcmpl-') || 
-        json.id.startsWith('cmpl-') || 
-        json.id.startsWith('conv-')
-      ) &&
-      (
-        json.model || 
-        json.object === 'chat.completion' || 
-        json.object === 'text_completion'
-      )
-    ) {
-      console.log('✅ Detectado padrão 6: Resposta com ID de completion OpenAI');
-      return true;
-    }
-    
-    // Padrão 7: Verificar se há campos específicos de embeddings
-    if (
-      json.model && 
-      json.model.includes('embedding') && 
-      json.data && 
-      Array.isArray(json.data) && 
-      json.data.length > 0 && 
-      json.data[0].embedding
-    ) {
-      console.log('✅ Detectado padrão 7: Resposta de embeddings');
-      return true;
-    }
-    
-    // Padrão 8: Verificar se há campos específicos de modelos de imagem
-    if (
-      json.model && 
-      (
-        json.model.includes('dall-e') || 
-        json.model.includes('image')
-      ) && 
-      json.data && 
-      Array.isArray(json.data) && 
-      json.data.length > 0 && 
-      json.data[0].url
-    ) {
-      console.log('✅ Detectado padrão 8: Resposta de geração de imagem');
-      return true;
-    }
-    
-    // Padrão 9: Verificar se há campos específicos de modelos de áudio
-    if (
-      json.model && 
-      (
-        json.model.includes('whisper') || 
-        json.model.includes('audio')
-      ) && 
-      json.text
-    ) {
-      console.log('✅ Detectado padrão 9: Resposta de transcrição de áudio');
-      return true;
-    }
-    
-    // Padrão 10: Verificar se há campos que indicam uso de tokens sem modelo específico
-    if (
-      (
-        json.prompt_tokens !== undefined || 
-        json.completion_tokens !== undefined || 
-        json.input_tokens !== undefined || 
-        json.output_tokens !== undefined
-      ) &&
-      (
-        json.finish_reason !== undefined || 
-        json.stop_reason !== undefined
-      )
-    ) {
-      console.log('✅ Detectado padrão 10: Resposta com contagem de tokens sem modelo específico');
-      return true;
-    }
-    
-    console.log('❌ Não é uma resposta OpenAI reconhecida');
-    return false;
+    return isOpenAI;
   }
-  
-  // Extrai informações detalhadas de modelo e tokens
-  private extractDetailedModelInfo(json: any): { 
-    model: string, 
-    promptTokens: number, 
-    completionTokens: number, 
-    totalTokens: number 
-  } {
-    let model = '';
-    let promptTokens = 0;
-    let completionTokens = 0;
-    let totalTokens = 0;
+
+  // Extrai informações do modelo e tokens da resposta
+  private extractModelInfo(json: any): { model: string, tokens: number } {
+    const result = { model: '', tokens: 0 };
     
     try {
-      // Primeiro, tentar encontrar o modelo
+      // Tenta extrair o modelo
       if (json.model) {
-        model = json.model;
-      } else if (json.data && json.data.model) {
-        model = json.data.model;
-      } else if (json.response && json.response.model) {
-        model = json.response.model;
+        result.model = json.model;
+        console.log('Modelo encontrado diretamente:', result.model);
       } else if (json.request && json.request.model) {
-        model = json.request.model;
-      }
-      
-      // Normalizar nome do modelo para formatos conhecidos
-      model = this.normalizeModelName(model);
-      
-      // Agora, tentar encontrar informações de tokens
-      if (json.usage) {
-        promptTokens = json.usage.prompt_tokens || 0;
-        completionTokens = json.usage.completion_tokens || 0;
-        totalTokens = json.usage.total_tokens || 0;
-      } else if (json.data && json.data.usage) {
-        promptTokens = json.data.usage.prompt_tokens || 0;
-        completionTokens = json.data.usage.completion_tokens || 0;
-        totalTokens = json.data.usage.total_tokens || 0;
-      } else if (json.response && json.response.usage) {
-        promptTokens = json.response.usage.prompt_tokens || 0;
-        completionTokens = json.response.usage.completion_tokens || 0;
-        totalTokens = json.response.usage.total_tokens || 0;
-      }
-      
-      // Se temos modelo mas não temos totalTokens, tentar recuperar de outros lugares
-      if (model && totalTokens === 0) {
-        if (json.tokens) {
-          totalTokens = json.tokens;
-        } else if (json.token_count) {
-          totalTokens = json.token_count;
+        result.model = json.request.model;
+        console.log('Modelo encontrado em request:', result.model);
+      } else if (json.data && json.data.model) {
+        result.model = json.data.model;
+        console.log('Modelo encontrado em data:', result.model);
+      } else if (json.body && typeof json.body === 'string' && json.body.includes('model')) {
+        try {
+          // Tenta extrair o modelo do corpo da requisição
+          const bodyJson = JSON.parse(json.body);
+          if (bodyJson.model) {
+            result.model = bodyJson.model;
+            console.log('Modelo encontrado no body JSON:', result.model);
+          }
+        } catch (e) {
+          // Ignora erro de parsing
+          console.log('Erro ao analisar body como JSON');
         }
       }
       
-      // Se temos totalTokens mas não temos prompt/completion tokens, fazer uma estimativa
-      if (totalTokens > 0 && promptTokens === 0 && completionTokens === 0) {
-        // Estimativa aproximada: 70% prompt, 30% completion
-        promptTokens = Math.round(totalTokens * 0.7);
-        completionTokens = totalTokens - promptTokens;
+      // Tenta extrair tokens
+      if (json.usage) {
+        // Soma tokens de entrada e saída
+        result.tokens = (json.usage.prompt_tokens || 0) + (json.usage.completion_tokens || 0);
+        // Se não houver detalhamento, usa o total
+        if (result.tokens === 0 && json.usage.total_tokens) {
+          result.tokens = json.usage.total_tokens;
+        }
+        console.log('Tokens encontrados em usage:', result.tokens);
+      } else if (json.data && json.data.usage) {
+        result.tokens = (json.data.usage.prompt_tokens || 0) + (json.data.usage.completion_tokens || 0);
+        if (result.tokens === 0 && json.data.usage.total_tokens) {
+          result.tokens = json.data.usage.total_tokens;
+        }
+        console.log('Tokens encontrados em data.usage:', result.tokens);
       }
       
-      // Se ainda não temos totalTokens mas temos os componentes
-      if (totalTokens === 0 && (promptTokens > 0 || completionTokens > 0)) {
-        totalTokens = promptTokens + completionTokens;
+      // Se não encontrou o modelo, usa um valor padrão
+      if (!result.model && result.tokens > 0) {
+        result.model = 'gpt-3.5-turbo'; // Modelo padrão como fallback
+        console.log('Usando modelo padrão:', result.model);
+      } else if (!result.model && (json.choices || (json.data && Array.isArray(json.data) && json.data.length > 0))) {
+        // Se tem choices ou data array, provavelmente é um modelo de texto
+        result.model = 'gpt-3.5-turbo';
+        
+        // Estima tokens pelo tamanho do texto
+        if (json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content) {
+          const content = json.choices[0].message.content;
+          result.tokens = Math.ceil(content.length / 4); // Estimativa aproximada
+          console.log('Tokens estimados do conteúdo:', result.tokens);
+        }
       }
       
     } catch (error) {
-      console.error('Erro ao extrair informações do modelo:', error);
+      console.error('Error extracting model info:', error);
     }
     
-    return { model, promptTokens, completionTokens, totalTokens };
+    return result;
   }
-  
-  // Melhorar o mapeamento de modelos para garantir consistência
-  private normalizeModelName(model: string): string {
-    // Converter para minúsculas para facilitar a comparação
-    const lowerModel = model.toLowerCase().trim();
+
+  // Calcula o custo por token para um modelo específico
+  private modelCostPerToken(model: string): number {
+    // Normaliza o nome do modelo para comparação (remove versões específicas)
+    const normalizedModel = model.toLowerCase()
+      .replace(/^gpt-4-turbo.*/, 'gpt-4-turbo')
+      .replace(/^gpt-4-[0-9]+-preview.*/, 'gpt-4-turbo')
+      .replace(/^gpt-4-vision.*/, 'gpt-4-vision')
+      .replace(/^gpt-4-[0-9]+k.*/, 'gpt-4')
+      .replace(/^gpt-3.5-turbo-[0-9]+k.*/, 'gpt-3.5-turbo')
+      .replace(/-[0-9]{4}-[0-9]{2}-[0-9]{2}.*/, ''); // Remove datas como -0613
     
-    // Mapeamento de variações de nomes de modelos para nomes padronizados
-    const modelMap: { [key: string]: string } = {
+    console.log(`Calculando custo para modelo: ${model} (normalizado para: ${normalizedModel})`);
+    
+    // Custos por 1000 tokens (dividimos por 1000 para obter custo por token)
+    // Valores atualizados em maio de 2024 (preços podem mudar)
+    switch (normalizedModel) {
+      // GPT-4 Turbo
+      case 'gpt-4-turbo':
+        return 0.01 / 1000; // $0.01 por 1K tokens
+      
+      // GPT-4 Vision
+      case 'gpt-4-vision':
+        return 0.01 / 1000; // $0.01 por 1K tokens
+        
       // GPT-4
-      'gpt4': 'gpt-4',
-      'gpt-4-0613': 'gpt-4',
-      'gpt-4-0125': 'gpt-4',
-      'gpt-4-1106-preview': 'gpt-4-turbo',
-      'gpt-4-0314': 'gpt-4',
-      'gpt-4-32k': 'gpt-4-32k',
-      'gpt-4-32k-0613': 'gpt-4-32k',
-      'gpt-4-turbo-preview': 'gpt-4-turbo',
-      'gpt-4-turbo-2024-04-09': 'gpt-4-turbo',
+      case 'gpt-4':
+        return 0.03 / 1000; // $0.03 por 1K tokens
       
-      // GPT-4o
-      'gpt4o': 'gpt-4o',
-      'gpt-4o-2024-05-13': 'gpt-4o',
-      'gpt-4o-mini': 'gpt-4o-mini',
-      'gpt-4o-mini-2024-07-18': 'gpt-4o-mini',
+      // GPT-3.5 Turbo
+      case 'gpt-3.5-turbo':
+      case 'gpt-3.5-turbo-instruct':
+        return 0.0015 / 1000; // $0.0015 por 1K tokens
+        
+      // Text Embedding Models
+      case 'text-embedding-ada-002':
+      case 'text-embedding-3-small':
+        return 0.0001 / 1000; // $0.0001 por 1K tokens
       
-      // Vision models
-      'gpt-4-vision': 'gpt-4-vision',
-      'gpt-4-vision-preview': 'gpt-4-vision',
-      'gpt-4-1106-vision-preview': 'gpt-4-vision',
-      'gpt-4-turbo-vision': 'gpt-4-vision',
-      'gpt-4o-vision': 'gpt-4o',  // GPT-4o inclui capacidades visuais
+      // Text Embedding Large
+      case 'text-embedding-3-large':
+        return 0.00013 / 1000; // $0.00013 por 1K tokens
+        
+      // DALL-E Models
+      case 'dall-e-2':
+      case 'dall-e-3':
+        return 0.02; // Aproximação, já que DALL-E é por imagem e não por token
       
-      // GPT-3.5
-      'gpt3': 'gpt-3.5-turbo',
-      'gpt3.5': 'gpt-3.5-turbo',
-      'gpt-3': 'gpt-3.5-turbo',
-      'gpt-35-turbo': 'gpt-3.5-turbo',
-      'gpt-3.5-turbo-0301': 'gpt-3.5-turbo',
-      'gpt-3.5-turbo-0613': 'gpt-3.5-turbo',
-      'gpt-3.5-turbo-1106': 'gpt-3.5-turbo',
-      'gpt-3.5-turbo-0125': 'gpt-3.5-turbo',
-      'gpt-3.5-turbo-16k': 'gpt-3.5-turbo-16k',
-      'gpt-3.5-turbo-16k-0613': 'gpt-3.5-turbo-16k',
-      'gpt-3.5-turbo-instruct': 'gpt-3.5-turbo-instruct',
-      
-      // DALL-E models
-      'dall-e': 'dall-e-3',
-      'dall-e-2': 'dall-e-2',
-      'dall-e-3': 'dall-e-3',
-      
-      // Whisper models
-      'whisper': 'whisper-1',
-      'whisper-1': 'whisper-1',
-      
-      // Text embedding models
-      'text-embedding': 'text-embedding-ada-002',
-      'text-embedding-ada': 'text-embedding-ada-002',
-      'text-embedding-ada-002': 'text-embedding-ada-002',
-      'text-embedding-3-small': 'text-embedding-3-small',
-      'text-embedding-3-large': 'text-embedding-3-large',
-      
-      // Moderation models
-      'text-moderation': 'text-moderation-latest',
-      'text-moderation-latest': 'text-moderation-latest',
-      'text-moderation-stable': 'text-moderation-stable',
-      
-      // Legacy models
-      'text-davinci-003': 'text-davinci-003',
-      'text-davinci-002': 'text-davinci-002',
-      'text-davinci-001': 'text-davinci-001',
-      'text-curie-001': 'text-curie-001',
-      'text-babbage-001': 'text-babbage-001',
-      'text-ada-001': 'text-ada-001',
-      'davinci': 'davinci',
-      'curie': 'curie',
-      'babbage': 'babbage',
-      'ada': 'ada'
-    };
-    
-    // Verificar correspondências exatas primeiro
-    if (modelMap[lowerModel]) {
-      return modelMap[lowerModel];
+      // Whisper (transcrição)
+      case 'whisper-1':
+        return 0.006 / 60; // $0.006 por minuto (aproximação)
+        
+      // Fallback para outros modelos
+      default:
+        console.log(`Modelo desconhecido: ${model}, usando custo padrão de GPT-3.5 Turbo`);
+        return 0.0015 / 1000; // Usa GPT-3.5 como fallback
     }
-    
-    // Verificar correspondências parciais
-    for (const [key, value] of Object.entries(modelMap)) {
-      if (lowerModel.includes(key)) {
-        return value;
-      }
-    }
-    
-    // Verificar padrões de modelo comuns
-    if (lowerModel.includes('gpt-4') && lowerModel.includes('vision')) {
-      return 'gpt-4-vision';
-    } else if (lowerModel.includes('gpt-4o') && lowerModel.includes('mini')) {
-      return 'gpt-4o-mini';
-    } else if (lowerModel.includes('gpt-4o')) {
-      return 'gpt-4o';
-    } else if (lowerModel.includes('gpt-4') && lowerModel.includes('turbo')) {
-      return 'gpt-4-turbo';
-    } else if (lowerModel.includes('gpt-4')) {
-      return 'gpt-4';
-    } else if (lowerModel.includes('gpt-3.5') || lowerModel.includes('gpt3.5')) {
-      return 'gpt-3.5-turbo';
-    } else if (lowerModel.includes('dall-e-3') || lowerModel.includes('dalle3')) {
-      return 'dall-e-3';
-    } else if (lowerModel.includes('embedding')) {
-      return 'text-embedding-ada-002';
-    }
-    
-    // Se não conseguimos mapear, retornar o modelo original
-    return model;
   }
-  
-  // Calcular custo detalhado com base no modelo e contagem de tokens
-  private calculateDetailedCost(model: string, promptTokens: number, completionTokens: number): number {
-    // Preços em dólares por 1000 tokens - atualizados com os modelos mais recentes
-    const prices: { [key: string]: { prompt: number, completion: number } } = {
-      // GPT-4 e variantes
-      'gpt-4': { prompt: 0.03, completion: 0.06 },
-      'gpt-4-32k': { prompt: 0.06, completion: 0.12 },
-      'gpt-4-turbo': { prompt: 0.01, completion: 0.03 },
-      'gpt-4-vision': { prompt: 0.01, completion: 0.03 },
-      
-      // GPT-4o e variantes
-      'gpt-4o': { prompt: 0.005, completion: 0.015 },
-      'gpt-4o-mini': { prompt: 0.00015, completion: 0.0006 },  // Preços mais baixos do mini
-      
-      // GPT-3.5 e variantes
-      'gpt-3.5-turbo': { prompt: 0.0005, completion: 0.0015 },
-      'gpt-3.5-turbo-16k': { prompt: 0.001, completion: 0.002 },
-      'gpt-3.5-turbo-instruct': { prompt: 0.0015, completion: 0.002 },
-      
-      // DALL-E 3
-      'dall-e-3': { prompt: 0.02, completion: 0.02 },  // $0.02 por imagem padrão (simplificado)
-      'dall-e-2': { prompt: 0.018, completion: 0.018 },
-      
-      // Embeddings
-      'text-embedding-ada-002': { prompt: 0.0001, completion: 0.0 },
-      'text-embedding-3-small': { prompt: 0.00002, completion: 0.0 },
-      'text-embedding-3-large': { prompt: 0.00013, completion: 0.0 },
-      
-      // Whisper (transcrição de áudio)
-      'whisper-1': { prompt: 0.006, completion: 0.0 },  // $0.006 por minuto
-      
-      // Modelos legados
-      'text-davinci-003': { prompt: 0.02, completion: 0.02 },
-      'text-davinci-002': { prompt: 0.02, completion: 0.02 },
-      'text-curie-001': { prompt: 0.002, completion: 0.002 },
-      'text-babbage-001': { prompt: 0.0005, completion: 0.0005 },
-      'text-ada-001': { prompt: 0.0004, completion: 0.0004 },
-      'davinci': { prompt: 0.02, completion: 0.02 },
-      'curie': { prompt: 0.002, completion: 0.002 },
-      'babbage': { prompt: 0.0005, completion: 0.0005 },
-      'ada': { prompt: 0.0004, completion: 0.0004 }
-    };
+
+  /**
+   * Gets workflows that have the "agent" tag
+   * @returns Promise with an array of agent workflows
+   */
+  async getAgentWorkflows(): Promise<N8NWorkflow[]> {
+    try {
+      const workflows = await this.getWorkflows()
+      console.log('Searching for agent workflows...')
+
+      // Filtrar workflows com as tags necessárias
+      const agentWorkflows = workflows.filter(workflow => {
+        // Garantir que workflow.tags é um array
+        if (!workflow.tags || !Array.isArray(workflow.tags)) {
+          console.log(`Workflow ${workflow.id} não tem tags ou tags não são um array`)
+          return false
+        }
+        
+        // Verificar se alguma tag corresponde a "agent" (case insensitive)
+        const hasAgentTag = workflow.tags.some((tag: any) => {
+          // Se a tag é uma string
+          if (typeof tag === 'string') {
+            return tag.toLowerCase() === 'agent'
+          }
+          // Se a tag é um objeto com propriedade name
+          else if (tag && typeof tag === 'object' && 'name' in tag) {
+            const tagName = (tag as any).name
+            return typeof tagName === 'string' && tagName.toLowerCase() === 'agent'
+          }
+          return false
+        })
+
+        return hasAgentTag
+      })
     
-    // Usar preços específicos do modelo ou preços default
-    const modelPrices = prices[model] || { prompt: 0.002, completion: 0.002 };
-    
-    // Calcular custo
-    const promptCost = (promptTokens / 1000) * modelPrices.prompt;
-    const completionCost = (completionTokens / 1000) * modelPrices.completion;
-    
-    return promptCost + completionCost;
+    console.log(`Found ${agentWorkflows.length} workflows with "agent" tag`)
+    return agentWorkflows
+    } catch (error) {
+      console.error('Error fetching agent workflows:', error)
+      return []
+    }
   }
 
   async getAgentStatus(workflows: N8NWorkflow[]): Promise<N8NAgent[]> {
@@ -1010,46 +565,93 @@ class N8NService {
       console.log(`Processing workflow: ${workflow.name}`)
       console.log('Workflow tags:', workflow.tags)
 
-      const executions = await this.getWorkflowExecutions(workflow.id)
-      const lastExecution = executions[0]
-      
-      // Extrair informações de custos da OpenAI
-      const openAICosts = await this.extractOpenAICosts(executions)
+      try {
+        // Buscar execuções com mais detalhes
+        const executions = await this.getWorkflowExecutions(workflow.id)
+        console.log(`Fetched ${executions.length} executions for workflow ${workflow.name}`)
+        
+        // Garantir que temos objetos de execução válidos
+        const validExecutions = executions.filter(exec => 
+          exec && typeof exec === 'object' && exec.startedAt
+        )
+        
+        // Ordenar execuções da mais recente para a mais antiga
+        const sortedExecutions = validExecutions.sort((a, b) => {
+          const dateA = new Date(a.startedAt).getTime()
+          const dateB = new Date(b.startedAt).getTime()
+          return dateB - dateA // ordem decrescente (mais recente primeiro)
+        })
+        
+        const lastExecution = sortedExecutions.length > 0 ? sortedExecutions[0] : null
+        console.log(`Last execution for ${workflow.name}:`, lastExecution ? 
+          new Date(lastExecution.startedAt).toISOString() : 'None')
+        
+        // Usar o método específico para contar execuções diárias
+        // Este método faz uma busca dedicada e mais abrangente
+        console.log(`Buscando contagem precisa de execuções diárias para ${workflow.name}...`)
+        const executionsToday = await this.getWorkflowDailyExecutions(workflow.id)
+        console.log(`Contagem final: ${executionsToday} execuções hoje para ${workflow.name}`)
+        
+        // Extrair informações de custos da OpenAI
+        const openAICosts = await this.extractOpenAICosts(sortedExecutions)
 
-      // Procura por uma tag que começa com "type:"
-      const typeTag = workflow.tags.find(tag => typeof tag === 'string' && tag.startsWith('type:'))
-      const type = typeTag ? typeTag.replace('type:', '') : 'ai'
+        // Procura por uma tag que começa com "type:"
+        const typeTag = workflow.tags.find(tag => typeof tag === 'string' && tag.startsWith('type:'))
+        const type = typeTag ? typeTag.replace('type:', '') : 'ai'
 
-      const agent: N8NAgent = {
-        id: workflow.id,
-        name: workflow.name,
-        status: workflow.active ? 'online' : 'offline',
-        type,
-        lastUpdate: new Date(workflow.updatedAt),
-        workflowId: workflow.id,
-        executionCount: executions.length,
-        lastExecution: lastExecution ? new Date(lastExecution.startedAt) : undefined,
-        averageExecutionTime: this.calculateAverageExecutionTime(executions),
-        // Adiciona informações de custo da OpenAI
-        openAI: {
-          totalCost: openAICosts.reduce((acc, cost) => acc + cost.cost, 0),
-          totalTokens: openAICosts.reduce((acc, cost) => acc + cost.tokens, 0),
-          modelUsage: openAICosts.reduce((acc, cost) => {
-            acc[cost.model] = {
-              cost: cost.cost,
-              tokens: cost.tokens,
-              calls: 1
-            };
-            return acc;
-          }, {} as Record<string, { cost: number; tokens: number; calls: number }>)
+        // Criar o objeto do agente com as informações processadas
+        const agent: N8NAgent = {
+          id: workflow.id,
+          name: workflow.name,
+          status: workflow.active ? 'online' : 'offline',
+          type,
+          lastUpdate: new Date(workflow.updatedAt),
+          workflowId: workflow.id,
+          executionCount: sortedExecutions.length,
+          executions: sortedExecutions,
+          executionsToday: executionsToday,
+          lastExecution: lastExecution ? new Date(lastExecution.startedAt) : undefined,
+          averageExecutionTime: this.calculateAverageExecutionTime(sortedExecutions),
+          // Adiciona informações de custo da OpenAI
+          openAI: {
+            totalCost: openAICosts.reduce((acc, cost) => acc + cost.cost, 0),
+            totalTokens: openAICosts.reduce((acc, cost) => acc + cost.tokens, 0),
+            modelUsage: openAICosts.reduce((acc, cost) => {
+              if (!acc[cost.model]) {
+                acc[cost.model] = {
+                  cost: 0,
+                  tokens: 0,
+                  calls: 0
+                };
+              }
+              acc[cost.model].cost += cost.cost;
+              acc[cost.model].tokens += cost.tokens;
+              acc[cost.model].calls += 1;
+              return acc;
+            }, {} as Record<string, { cost: number; tokens: number; calls: number }>)
+          }
         }
-      }
 
-      console.log('Created agent object:', agent)
-      agents.push(agent)
+        console.log(`Created agent object for ${workflow.name}`)
+        agents.push(agent)
+      } catch (error) {
+        console.error(`Error processing workflow ${workflow.name}:`, error)
+        // Criar um objeto de agente mesmo com erro, para mostrar o status
+        const agent: N8NAgent = {
+          id: workflow.id,
+          name: workflow.name,
+          status: 'error',
+          type: 'unknown',
+          lastUpdate: new Date(workflow.updatedAt),
+          workflowId: workflow.id,
+          executionCount: 0,
+          executionsToday: 0
+        }
+        agents.push(agent)
+      }
     }
 
-    console.log('Final agents list:', agents)
+    console.log(`Processed ${agents.length} agents`)
     return agents
   }
 
@@ -1149,58 +751,48 @@ class N8NService {
     try {
       console.log(`Buscando detalhes do workflow ${workflowId}`);
       
-      // Verificar se temos as configurações necessárias
-      const baseUrl = this.getN8NApiUrl();
-      const apiKey = this.getN8NApiKey();
+      // URL relativa para a API do Next.js
+      const url = `/api/n8n/workflow/${workflowId}`;
+      console.log("URL da requisição:", url);
       
-      if (!baseUrl || !apiKey) {
-        console.error('N8N API URL ou API Key não configurados:', {
-          baseUrl: baseUrl ? 'Configurado' : 'Não configurado',
-          apiKey: apiKey ? 'Configurado' : 'Não configurado'
-        });
-        throw new Error('N8N API URL ou API Key não configurados');
-      }
-      
-      // URL da API do N8N para buscar um workflow específico
-      const apiUrl = `${baseUrl}/workflows/${workflowId}`;
-      console.log(`Fazendo requisição GET para ${apiUrl}`);
-      
-      const response = await fetch(apiUrl, {
-        method: 'GET',
+      // Não precisamos adicionar headers de autenticação pois a API do Next.js lida com isso
+      const response = await fetch(url, {
         headers: {
-          'Accept': 'application/json',
-          'X-N8N-API-KEY': apiKey,
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
           'Expires': '0'
         }
       });
-
-      if (!response.ok) {
-        const statusText = response.statusText || 'Erro desconhecido';
-        console.error(`Erro ao buscar workflow: ${response.status} - ${statusText}`);
-        try {
-          const errorData = await response.text();
-          console.error('Detalhes do erro:', errorData);
-        } catch (e) {
-          console.error('Não foi possível ler o corpo da resposta de erro');
+      
+      // Se a API retornar 404, pode ser que a API ainda não esteja implementada
+      if (response.status === 404) {
+        console.warn(`API para buscar workflow específico não implementada. Usando dados de workflows gerais.`);
+        
+        // Buscar todos os workflows e filtrar o que precisamos
+        const workflows = await this.getWorkflows();
+        const workflow = workflows.find(w => w.id === workflowId);
+        
+        if (!workflow) {
+          throw new Error(`Workflow com ID ${workflowId} não encontrado`);
         }
-        throw new Error(`Erro ao buscar workflow: ${response.status} - ${statusText}`);
+        
+        return workflow;
+      }
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Erro na resposta:", errorText);
+        throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
       }
       
       const data = await response.json();
       
-      // Formatar o retorno para manter compatibilidade com o serviço
-      return {
-        id: data.id,
-        name: data.name,
-        active: data.active,
-        createdAt: data.createdAt,
-        updatedAt: data.updatedAt,
-        tags: Array.isArray(data.tags) 
-          ? data.tags.map((tag: any) => typeof tag === 'string' ? tag : tag.name || '')
-          : []
-      };
+      if (!data) {
+        console.error("Formato de dados inválido:", data);
+        throw new Error("Formato de dados inválido recebido da API");
+      }
+      
+      return data;
     } catch (error) {
       console.error(`Error fetching workflow ${workflowId}:`, error);
       throw error;
@@ -1214,329 +806,130 @@ class N8NService {
    * @returns Statistics about the execution and processed data
    */
   async extractAndSaveOpenAIUsage(workflowId?: string, supabaseClient?: any): Promise<any> {
-    console.log(`Starting OpenAI usage extraction${workflowId ? ` for workflow ${workflowId}` : ''}`);
-    
-    // Inicializar cliente Supabase se não foi fornecido
-    let supabase = supabaseClient;
-    let isExternalClient = !!supabaseClient;
-    
-    if (!supabase) {
-      try {
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-        const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-        
-        if (!supabaseUrl || !supabaseKey) {
-          console.error('Configuração do Supabase não encontrada:',
-            { urlDefined: !!supabaseUrl, keyDefined: !!supabaseKey });
-          return {
-            success: false,
-            message: 'Configuração do Supabase não encontrada',
-            stats: { total_records: 0 }
-          };
-        }
-        
-        console.log('Inicializando cliente Supabase interno');
-        
-        // Criar o cliente com opções otimizadas para API
-        supabase = createClient(supabaseUrl, supabaseKey, {
-          auth: {
-            persistSession: false,
-            autoRefreshToken: false,
-            detectSessionInUrl: false
-          },
-          global: {
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Client-Info': 'n8n-service'
-            }
-          }
-        });
-      } catch (error) {
-        console.error('Erro ao criar cliente Supabase:', error);
-        return {
-          success: false,
-          message: 'Erro ao criar cliente Supabase',
-          stats: { total_records: 0 }
-        };
-      }
-    }
-    
     try {
-      // Testar a conexão com o Supabase
-      if (!isExternalClient) {
-        console.log('Testando conexão com o Supabase...');
-        const { error: testError } = await supabase.from('openai_usage').select('id').limit(1);
-        
-        if (testError) {
-          console.error('Erro na conexão com o Supabase:', testError);
-          return {
-            success: false,
-            message: `Erro na conexão com o Supabase: ${testError.message}`,
-            stats: { total_records: 0 }
-          };
-        }
-      }
+      console.log(`Iniciando extração de dados de uso da OpenAI ${workflowId ? `para workflow ${workflowId}` : 'para todos workflows'}`);
       
-      // Obter workflows - todos ou apenas o especificado
-      let workflows: any[] = [];
-      
-      if (workflowId) {
-        console.log(`Obtendo workflow específico: ${workflowId}`);
-        const workflow = await this.getWorkflow(workflowId);
-        if (workflow) {
-          workflows = [workflow];
-        } else {
-          return {
-            success: false,
-            message: `Workflow não encontrado: ${workflowId}`,
-            stats: { total_records: 0 }
-          };
-        }
-      } else {
-        console.log('Obtendo todos os workflows com tag "agent"');
-        workflows = await this.getAgentWorkflows();
-      }
-      
-      console.log(`${workflows.length} workflows encontrados para processar`);
-      
-      if (workflows.length === 0) {
-        return {
-          success: true,
-          message: 'Nenhum workflow encontrado para processar',
-          stats: { total_records: 0 }
-        };
-      }
-      
-      // Estatísticas para rastrear o progresso
+      // Estatísticas
       const stats = {
         workflows_processed: 0,
         executions_processed: 0,
+        total_records: 0,
         total_tokens: 0,
-        total_records: 0
+        total_cost: 0
       };
       
-      // Processar cada workflow
-      for (const workflow of workflows) {
+      // 1. Buscar workflows (todos ou um específico)
+      const workflows = workflowId 
+        ? [await this.getWorkflow(workflowId)]
+        : await this.getWorkflows();
+      
+      console.log(`Processando ${workflows.length} workflows`);
+      
+      // 2. Filtrar workflows relevantes (com tags de IA/OpenAI)
+      const relevantWorkflows = workflows.filter(wf => {
+        // Verificar se as tags são um array
+        const tags = Array.isArray(wf.tags) 
+          ? wf.tags.map((tag: any) => {
+              if (typeof tag === 'string') return tag.toLowerCase();
+              if (tag && typeof tag === 'object' && tag.name) return tag.name.toLowerCase();
+              return '';
+            })
+          : [];
+        
+        // Incluir workflows com tags relacionadas a IA ou sem filtragem se for um workflow específico
+        return workflowId ? true : tags.some(tag => 
+          ['agent', 'openai', 'llm', 'ai', 'chatbot', 'gpt'].includes(tag)
+        );
+      });
+      
+      console.log(`Encontrados ${relevantWorkflows.length} workflows relevantes`);
+      stats.workflows_processed = relevantWorkflows.length;
+      
+      // 3. Para cada workflow, buscar execuções e extrair dados
+      for (const workflow of relevantWorkflows) {
         try {
-          console.log(`\nProcessando workflow: ${workflow.name} (${workflow.id})`);
+          console.log(`Processando workflow: ${workflow.name} (${workflow.id})`);
           
-          // Obter as execuções deste workflow
+          // Buscar execuções (limitar a 100 para evitar sobrecarga)
           const executions = await this.getWorkflowExecutions(workflow.id);
-          console.log(`${executions.length} execuções encontradas para o workflow ${workflow.name}`);
+          console.log(`Encontradas ${executions.length} execuções para o workflow ${workflow.name}`);
           
-          if (executions.length === 0) {
-            console.log(`Nenhuma execução encontrada para o workflow ${workflow.name}, pulando.`);
-            continue;
-          }
-          
-          // Extrair custos da OpenAI
-          const openAICosts = await this.extractOpenAICosts(executions);
-          console.log(`${openAICosts.length} registros de custo extraídos para o workflow ${workflow.name}`);
-          
-          // Adicionar metadados do workflow a cada registro
-          const enhancedCosts = openAICosts.map(cost => ({
-            ...cost,
-            workflowId: workflow.id,
-            workflowName: workflow.name
-          }));
-          
-          // Salvar no Supabase em lotes para evitar sobrecarregar a API
-          if (enhancedCosts.length > 0) {
-            const BATCH_SIZE = 50;
-            let records = 0;
-            
-            // Processar em lotes
-            for (let i = 0; i < enhancedCosts.length; i += BATCH_SIZE) {
-              const batch = enhancedCosts.slice(i, i + BATCH_SIZE);
-              
-              // Preparar dados para inserção
-              const recordsToInsert = batch.map(cost => ({
-                timestamp: cost.timestamp,
-                workflow_id: cost.workflowId,
-                workflow_name: cost.workflowName,
-                model: cost.model, // Coluna no Supabase com m minúsculo
-                "Model": cost.model, // Coluna no Supabase com M maiúsculo para compatibilidade
-                endpoint: 'chat', // Padrão para chat completions
-                prompt_tokens: cost.promptTokens,
-                completion_tokens: cost.completionTokens,
-                total_tokens: cost.tokens,
-                estimated_cost: cost.cost,
-                // Campos obrigatórios para o Supabase
-                user_id: null, // Não temos usuário específico
-                request_id: `n8n_${cost.executionId}_${cost.nodeId || 'node'}_${new Date().getTime()}`,
-                tags: ['agent', 'n8n'],
-                metadata: {
-                  source: 'n8n',
-                  sync_date: new Date().toISOString().split('T')[0],
-                  execution_id: cost.executionId,
-                  node_id: cost.nodeId,
-                  node_name: cost.nodeName
-                }
-              }));
-              
-              // Fazer o upsert no Supabase
-              try {
-                console.log(`Inserindo lote de ${recordsToInsert.length} registros no Supabase...`);
-                
-                // Log para debug - primeiro registro da requisição
-                if (recordsToInsert.length > 0) {
-                  console.log('Exemplo de registro para inserção (primeiro do lote):');
-                  console.log(JSON.stringify(recordsToInsert[0], null, 2));
-                }
-                
-                const { data, error } = await supabase
-                  .from('openai_usage')
-                  .upsert(recordsToInsert, {
-                    onConflict: 'request_id',
-                    ignoreDuplicates: false
-                  });
-                  
-                if (error) {
-                  console.error('Erro ao inserir registros no Supabase:', error);
-                  console.error('Código do erro:', error.code);
-                  console.error('Detalhes:', error.details);
-                  console.error('Mensagem:', error.message);
-                  console.error('Dica:', error.hint || 'Nenhuma dica disponível');
-                  
-                  // Tentar obter mais informações sobre a estrutura da tabela
-                  try {
-                    console.log('Verificando estrutura da tabela openai_usage...');
-                    const { data: tableInfo, error: tableError } = await supabase
-                      .from('openai_usage')
-                      .select('*')
-                      .limit(1);
-                      
-                    if (tableError) {
-                      console.error('Erro ao verificar tabela:', tableError);
-                    } else if (data && data.length > 0) {
-                      console.log('Exemplo de registro existente:');
-                      console.log(JSON.stringify(data[0], null, 2));
-                    } else {
-                      console.log('Tabela openai_usage existe mas não possui registros');
-                    }
-                  } catch (tableCheckError) {
-                    console.error('Erro ao verificar tabela:', tableCheckError);
-                  }
-                  // Não abortar completamente, continuar com o próximo lote
-                } else {
-                  records += recordsToInsert.length;
-                  console.log(`${recordsToInsert.length} registros inseridos com sucesso`);
-                }
-              } catch (insertError) {
-                console.error('Erro ao inserir lote no Supabase:', insertError);
-                if (insertError instanceof Error) {
-                  console.error('Detalhes do erro:', insertError.message);
-                  console.error('Stack:', insertError.stack);
-                }
-              }
-            }
-            
-            // Atualizar estatísticas
-            stats.total_records += records;
-            stats.total_tokens += enhancedCosts.reduce((sum, cost) => sum + cost.tokens, 0);
-          }
-          
-          // Marcar como processado
-          stats.workflows_processed++;
           stats.executions_processed += executions.length;
           
+          // Extrair custos da OpenAI
+          const costs = await this.extractOpenAICosts(executions);
+          console.log(`Extraídos ${costs.length} registros de custos para o workflow ${workflow.name}`);
+          
+          // Atualizar estatísticas
+          stats.total_records += costs.length;
+          stats.total_tokens += costs.reduce((sum, cost) => sum + cost.tokens, 0);
+          stats.total_cost += costs.reduce((sum, cost) => sum + cost.cost, 0);
+          
+          // Salvar no Supabase se o cliente foi fornecido
+          if (supabaseClient && costs.length > 0) {
+            console.log(`Salvando ${costs.length} registros no Supabase para o workflow ${workflow.name}`);
+            
+            for (const cost of costs) {
+              try {
+                // Preparar registro para inserção no Supabase
+                const record = {
+                  timestamp: cost.timestamp,
+                  workflow_id: workflow.id,
+                  workflow_name: workflow.name,
+                  Model: cost.model,
+                  endpoint: 'chat',
+                  prompt_tokens: Math.floor(cost.tokens * 0.7),
+                  completion_tokens: Math.floor(cost.tokens * 0.3),
+                  total_tokens: cost.tokens,
+                  estimated_cost: cost.cost,
+                  tags: workflow.tags || [],
+                  request_id: `extract_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+                  metadata: {
+                    source: 'n8n_extract',
+                    extracted_at: new Date().toISOString(),
+                    workflow_active: workflow.active
+                  },
+                  user_id: null
+                };
+                
+                // Inserir no Supabase
+                const { error } = await supabaseClient
+                  .from('openai_usage')
+                  .insert(record);
+                  
+                if (error) {
+                  console.error(`Erro ao inserir registro no Supabase: ${error.message}`);
+                }
+              } catch (insertError) {
+                console.error('Erro ao inserir registro:', insertError);
+              }
+            }
+          }
         } catch (workflowError) {
           console.error(`Erro ao processar workflow ${workflow.name}:`, workflowError);
-          // Continuar com o próximo workflow
         }
       }
       
-      console.log('\n===== Resumo da sincronização =====');
-      console.log(`Workflows processados: ${stats.workflows_processed}`);
-      console.log(`Execuções analisadas: ${stats.executions_processed}`);
-      console.log(`Registros inseridos: ${stats.total_records}`);
-      console.log(`Total de tokens: ${stats.total_tokens}`);
+      console.log('Extração de dados de uso concluída');
+      console.log('Estatísticas:', stats);
       
       return {
         success: true,
-        message: `Sincronização concluída com sucesso. ${stats.total_records} registros processados.`,
+        message: 'Dados de uso extraídos com sucesso',
         stats
       };
     } catch (error) {
-      console.error('Erro durante a sincronização:', error);
+      console.error('Erro ao extrair dados de uso:', error);
+      
       return {
         success: false,
-        message: `Erro durante a sincronização: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
-        stats: { total_records: 0 }
-      };
-    }
-  }
-
-  /**
-   * Busca workflows que são agentes de IA
-   * @returns {Promise<Array<{id: string, name: string, active: boolean}>>}
-   */
-  async getAgentWorkflows(): Promise<Array<{ id: string, name: string, active: boolean }>> {
-    try {
-      console.log('Buscando workflows relacionados a agentes IA...');
-      
-      const workflows = await this.getWorkflows();
-      
-      if (!workflows || workflows.length === 0) {
-        console.log('Nenhum workflow encontrado na API N8N');
-        return [];
-      }
-      
-      console.log(`Obtidos ${workflows.length} workflows totais do N8N`);
-      
-      // Log para debug - mostrar as tags do primeiro workflow
-      if (workflows.length > 0) {
-        console.log('Exemplo de workflow:', {
-          id: workflows[0].id,
-          name: workflows[0].name,
-          active: workflows[0].active,
-          tags: workflows[0].tags
-        });
-      }
-      
-      // Lista expandida de tags relevantes para identificar agentes
-      const relevantTags = ['agent', 'ai', 'openai', 'gpt', 'llm', 'chatbot', 'assistant', 'ia', 'bot', 'inteligência artificial'];
-      
-      // Filtrar workflows que têm tags relevantes ou cujo nome/descrição indica que são agentes
-      const agentWorkflows = workflows.filter((wf: N8NWorkflow) => {
-        // Verificar se o workflow está ativo
-        const isActive = wf.active === true;
-        
-        // Verificar se existe a propriedade tags e se contém alguma tag relevante
-        const hasTags = Array.isArray(wf.tags) && wf.tags.some((tag: any) => {
-          // Lidar com tags que podem ser objetos ou strings
-          const tagName = typeof tag === 'string' ? tag : (tag && tag.name ? tag.name : '');
-          return relevantTags.some(rt => tagName.toLowerCase().includes(rt));
-        });
-        
-        // Verificar se o nome contém termos relevantes
-        const nameContainsAgent = typeof wf.name === 'string' && 
-          relevantTags.some(tag => wf.name.toLowerCase().includes(tag));
-        
-        // Verificar se a descrição contém termos relevantes (se existir)
-        const descriptionContainsAgent = typeof wf.description === 'string' && wf.description !== undefined && 
-          relevantTags.some(tag => wf.description!.toLowerCase().includes(tag));
-        
-        // Log para debug
-        if (hasTags) {
-          console.log(`Workflow ${wf.name} tem tags relevantes:`, wf.tags);
+        message: error instanceof Error ? error.message : 'Erro desconhecido',
+        stats: {
+          workflows_processed: 0,
+          executions_processed: 0,
+          total_records: 0
         }
-        
-        // Considerar como agente se tiver tags ou nome/descrição relevantes
-        return isActive && (hasTags || nameContainsAgent || descriptionContainsAgent);
-      });
-      
-      console.log(`Identificados ${agentWorkflows.length} workflows relacionados a agentes.`);
-      
-      // Mapear apenas os dados necessários
-      return agentWorkflows.map((wf: N8NWorkflow) => ({
-        id: wf.id,
-        name: wf.name,
-        active: wf.active
-      }));
-    } catch (error) {
-      console.error('Erro ao buscar workflows de agentes:', error);
-      return [];
+      };
     }
   }
 }

@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/contexts/ThemeContext"
 import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import { AuthGuard } from "@/components/auth-guard"
+import { AttributeCleaner } from "./attribute-cleaner"
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -28,8 +29,8 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <LanguageProvider>
-      <ThemeProvider>
+    <ThemeProvider>
+      <LanguageProvider>
         <AuthGuard>
           <div className="min-h-screen bg-[#0A0A0B] flex w-full overflow-hidden">
             {showSidebar && <Sidebar onExpandChange={setIsSidebarExpanded} />}
@@ -47,7 +48,8 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </AuthGuard>
-      </ThemeProvider>
-    </LanguageProvider>
+        <AttributeCleaner />
+      </LanguageProvider>
+    </ThemeProvider>
   )
 } 
