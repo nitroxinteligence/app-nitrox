@@ -77,12 +77,26 @@ export async function fetchOpenAICompletionsUsage(days = 31): Promise<OpenAIComp
   // Usar UTC para alinhamento com o dashboard da OpenAI
   const now = new Date();
   
-  // Data de fim: final do dia atual em UTC (23:59:59)
-  const endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+  // IMPORTANTE: Para garantir que a data do dia atual seja SEMPRE incluída,
+  // vamos definir o final do período para o momento atual com um buffer de 1 hora
+  const bufferMs = 60 * 60 * 1000; // 1 hora em milissegundos
+  const endDateTime = new Date(now.getTime() + bufferMs);
   
-  // Data de início: o início do dia limitedDays para trás em UTC (00:00:00)
-  // Isto é exatamente como o dashboard da OpenAI calcula o intervalo de datas
-  const startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - limitedDays + 1, 0, 0, 0));
+  // Data de fim: timestamp atual + buffer em UTC
+  const endDate = new Date(
+    Date.UTC(
+      endDateTime.getUTCFullYear(),
+      endDateTime.getUTCMonth(),
+      endDateTime.getUTCDate(),
+      endDateTime.getUTCHours(),
+      endDateTime.getUTCMinutes(),
+      endDateTime.getUTCSeconds()
+    )
+  );
+  
+  // Data de início: início do dia a exatos (limitedDays-1) dias atrás do hoje em UTC
+  // O dashboard da OpenAI inclui o dia atual e conta (n-1) dias para trás
+  const startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (limitedDays - 1), 0, 0, 0));
   
   const startTimestamp = Math.floor(startDate.getTime() / 1000);
   const endTimestamp = Math.floor(endDate.getTime() / 1000);
@@ -99,75 +113,123 @@ export async function fetchOpenAICompletionsUsage(days = 31): Promise<OpenAIComp
   try {
     // Implementar suporte a paginação para obter todos os dados
     while (true) {
-      const url = new URL('https://api.openai.com/v1/organization/usage/completions');
-      url.searchParams.append('start_time', startTimestamp.toString());
+  const url = new URL('https://api.openai.com/v1/organization/usage/completions');
+  url.searchParams.append('start_time', startTimestamp.toString());
       url.searchParams.append('end_time', endTimestamp.toString());
-      url.searchParams.append('bucket_width', '1d'); // Definir granularidade diária
-      url.searchParams.append('group_by', 'model'); // Agrupar por modelo para identificar o modelo utilizado
+  url.searchParams.append('bucket_width', '1d'); // Definir granularidade diária
+  url.searchParams.append('group_by', 'model'); // Agrupar por modelo para identificar o modelo utilizado
       
       // Adicionar token de paginação se disponível
       if (pageToken) {
         url.searchParams.append('page', pageToken);
       }
-      
-      // Log da URL sem token
+  
+  // Log da URL sem token
       console.log(`URL da requisição${pageToken ? ' (página '+pageToken+')' : ''}: ${url.toString()} (sem token de autenticação)`);
       
-      // Fazer a requisição
-      const response = await fetchWithTimeout(url.toString(), {
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_ADMIN_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      }, 15000); // 15 segundos de timeout
+      // Fazer a requisição com retry automático em caso de falha temporária
+      let retries = 0;
+      const maxRetries = 3;
+      let response: Response | undefined;
       
-      if (!response.ok) {
-        let errorText = '';
+      while (retries < maxRetries) {
         try {
-          const error = await response.json();
-          console.error('Resposta da API com erro:', error);
-          errorText = error.error?.message || response.statusText;
-        } catch (jsonError) {
-          errorText = await response.text();
-          console.error('Erro ao parsear resposta como JSON:', errorText);
-        }
-        
-        throw new Error(`Erro ao buscar dados de uso: ${errorText} (Status ${response.status})`);
-      }
-      
-      // Processar resposta
-      const data = await response.json();
-      
-      // Para depuração: verificar a estrutura dos dados retornados
-      if (data.data && data.data.length > 0) {
-        console.log(`Dados recebidos nesta página: ${data.data.length} buckets`);
-      } else {
-        console.log('Nenhum dado retornado ou estrutura de dados diferente do esperado nesta página:', data);
-      }
-      
-      // Processar cada "bucket" (período) de dados
-      if (data.data && Array.isArray(data.data)) {
-        for (const bucket of data.data) {
-          if (bucket.results && Array.isArray(bucket.results)) {
-            for (const result of bucket.results) {
-              usageData.push({
-                start_time: bucket.start_time,
-                end_time: bucket.end_time,
-                input_tokens: result.input_tokens || 0,
-                output_tokens: result.output_tokens || 0,
-                input_cached_tokens: result.input_cached_tokens || 0,
-                input_audio_tokens: result.input_audio_tokens || 0,
-                output_audio_tokens: result.output_audio_tokens || 0,
-                num_model_requests: result.num_model_requests || 0,
-                project_id: result.project_id,
-                user_id: result.user_id,
-                api_key_id: result.api_key_id,
-                model: result.model,
-                batch: result.batch
-              });
-            }
+          response = await fetchWithTimeout(url.toString(), {
+    headers: {
+      'Authorization': `Bearer ${process.env.OPENAI_ADMIN_KEY}`,
+      'Content-Type': 'application/json'
+    }
+          }, 20000); // 20 segundos de timeout para permitir respostas com muitos dados
+          
+          if (response.ok) break; // Saímos do loop se a resposta for bem-sucedida
+          
+          // Se o erro for 429 (Too Many Requests) ou 5xx (erro de servidor), retentamos
+          if (response.status === 429 || response.status >= 500) {
+            retries++;
+            const delay = Math.pow(2, retries) * 1000; // Backoff exponencial
+            console.warn(`Erro ${response.status} ao buscar dados da API. Tentativa ${retries}/${maxRetries}. Aguardando ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            // Para outros erros, não tentamos novamente
+            break;
+          }
+        } catch (error) {
+          // Erro de rede ou timeout
+          retries++;
+          const delay = Math.pow(2, retries) * 1000;
+          console.warn(`Erro de rede ao buscar dados. Tentativa ${retries}/${maxRetries}. Aguardando ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          
+          if (retries >= maxRetries) {
+            throw error; // Propagar o erro após máximo de tentativas
           }
         }
+      }
+      
+      // Se após as tentativas ainda não temos uma resposta válida
+      if (!response) {
+        throw new Error('Falha na comunicação com a API da OpenAI após múltiplas tentativas');
+  }
+  
+  // Processar resposta
+  const data = await response.json();
+  
+  // Para depuração: verificar a estrutura dos dados retornados
+  if (data.data && data.data.length > 0) {
+        console.log(`Dados recebidos nesta página: ${data.data.length} buckets`);
+        
+        // Resumo dos dados para diagnóstico
+        let totalInputTokensInPage = 0;
+        let totalOutputTokensInPage = 0;
+        let totalRequestsInPage = 0;
+  
+  // Processar cada "bucket" (período) de dados
+  if (data.data && Array.isArray(data.data)) {
+    for (const bucket of data.data) {
+            const bucketDate = new Date(bucket.start_time * 1000);
+            const bucketDateStr = bucketDate.toISOString().split('T')[0];
+            
+            console.log(`Processando bucket para data: ${bucketDateStr} (timestamp: ${bucket.start_time})`);
+            
+      if (bucket.results && Array.isArray(bucket.results)) {
+              console.log(`  Encontrados ${bucket.results.length} resultados neste bucket`);
+              
+        for (const result of bucket.results) {
+                // Log detalhado para diagnóstico
+                console.log(`  Modelo: ${result.model || 'N/A'}, Input: ${result.input_tokens || 0}, Output: ${result.output_tokens || 0}, Reqs: ${result.num_model_requests || 0}`);
+                
+                // Somar para diagnóstico
+                totalInputTokensInPage += result.input_tokens || 0;
+                totalOutputTokensInPage += result.output_tokens || 0;
+                totalRequestsInPage += result.num_model_requests || 0;
+                
+                // Adicionar ao array de resultados
+          usageData.push({
+            start_time: bucket.start_time,
+            end_time: bucket.end_time,
+            input_tokens: result.input_tokens || 0,
+            output_tokens: result.output_tokens || 0,
+            input_cached_tokens: result.input_cached_tokens || 0,
+            input_audio_tokens: result.input_audio_tokens || 0,
+            output_audio_tokens: result.output_audio_tokens || 0,
+            num_model_requests: result.num_model_requests || 0,
+            project_id: result.project_id,
+            user_id: result.user_id,
+            api_key_id: result.api_key_id,
+            model: result.model,
+            batch: result.batch
+          });
+        }
+      } else {
+              console.log(`  Nenhum resultado encontrado neste bucket`);
+      }
+    }
+        }
+        
+        // Resumo dos dados na página atual
+        console.log(`Resumo desta página: ${totalInputTokensInPage} input tokens, ${totalOutputTokensInPage} output tokens, ${totalRequestsInPage} requisições`);
+  } else {
+        console.log('Nenhum dado recebido nesta página ou estrutura de dados não suportada');
       }
       
       // Verificar se há mais páginas
@@ -181,10 +243,25 @@ export async function fetchOpenAICompletionsUsage(days = 31): Promise<OpenAIComp
     
     console.log(`Total de registros processados: ${usageData.length}`);
     
-    // Retornar dados normalizados
-    return usageData;
+    // Resumo dos dados totais para diagnóstico
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let totalRequests = 0;
+    
+    usageData.forEach(item => {
+      totalInputTokens += item.input_tokens || 0;
+      totalOutputTokens += item.output_tokens || 0;
+      totalRequests += item.num_model_requests || 0;
+    });
+    
+    console.log(`Resumo final: ${totalInputTokens} input tokens, ${totalOutputTokens} output tokens, ${totalRequests} requisições`);
+    
+    // Ordenar por data (mais recente primeiro) para facilitar manipulação posterior
+    usageData.sort((a, b) => b.start_time - a.start_time);
+    
+  return usageData;
   } catch (error) {
-    console.error('Erro ao fazer requisição para a API da OpenAI:', error);
+    console.error('Erro ao buscar dados de uso da OpenAI:', error);
     throw error;
   }
 }
@@ -204,6 +281,8 @@ export interface OpenAICostResult {
   line_item: string | null;
   project_id: string | null;
   organization_id: string | null;
+  // Campo adicional para facilitar filtragem por data
+  date_iso?: string;
 }
 
 /**
@@ -227,23 +306,28 @@ export async function fetchOpenAICosts(days = 30): Promise<OpenAICostResult[]> {
     throw new Error('Chave de API de administrador da OpenAI não configurada. Esta chave é necessária para acessar os dados de custos.');
   }
   
-  // Usar a mesma abordagem robusta para datas em UTC para alinhamento com o dashboard da OpenAI
+  // Usar UTC para alinhamento com o dashboard da OpenAI
   const now = new Date();
+  
+  // *** CORREÇÃO: Para evitar o erro "end_date must come after start_date" ***
+  // A API de custos da OpenAI com bucket_width=1d exige que os timestamps estejam em dias diferentes
+  // Vamos garantir um período mínimo de 2 dias para evitar esse erro
   
   // Data de fim: final do dia atual em UTC (23:59:59)
   const endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
   
-  // CORREÇÃO: Ajustar o cálculo do início do período para corresponder exatamente ao dashboard da OpenAI
-  // Para períodos como "últimos 7 dias", o dashboard da OpenAI inclui o dia atual e vai 6 dias para trás
-  // Portanto, para days = 7, precisamos ir para (7-1) = 6 dias atrás a partir do início do dia atual
-  const startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (limitedDays - 1), 0, 0, 0));
+  // Data de início: Sempre pelo menos 1 dia completo antes do fim
+  // Para períodos solicitados de 1 dia, pegamos sempre 2 dias (ontem e hoje)
+  // Para períodos maiores, usamos (limitedDays - 1) dias antes do hoje
+  const minDays = Math.max(2, limitedDays);
+  const startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (minDays - 1), 0, 0, 0));
   
   const startTimestamp = Math.floor(startDate.getTime() / 1000);
   const endTimestamp = Math.floor(endDate.getTime() / 1000);
   
   console.log(`Período da consulta para custos em UTC: ${startDate.toISOString()} até ${endDate.toISOString()}`);
   console.log(`Timestamps: ${startTimestamp} até ${endTimestamp} (diferença de ${endTimestamp - startTimestamp} segundos)`);
-  console.log(`Número real de dias abrangidos: ${limitedDays}`);
+  console.log(`Número real de dias abrangidos: ${minDays}`);
   
   // Dados normalizados
   const costResults: OpenAICostResult[] = [];
@@ -252,62 +336,166 @@ export async function fetchOpenAICosts(days = 30): Promise<OpenAICostResult[]> {
   try {
     // Implementar suporte a paginação para obter todos os dados de custos
     while (true) {
-      // Configurar parâmetros da requisição
-      const url = new URL('https://api.openai.com/v1/organization/costs');
-      url.searchParams.append('start_time', startTimestamp.toString());
+  // Configurar parâmetros da requisição
+  const url = new URL('https://api.openai.com/v1/organization/costs');
+  url.searchParams.append('start_time', startTimestamp.toString());
       url.searchParams.append('end_time', endTimestamp.toString());
-      url.searchParams.append('bucket_width', '1d'); // Definir granularidade diária
+  url.searchParams.append('bucket_width', '1d'); // Definir granularidade diária
       
       // Adicionar token de paginação se disponível
       if (pageToken) {
         url.searchParams.append('page', pageToken);
       }
-      
-      // Log da URL sem token
+  
+  // Log da URL sem token
       console.log(`URL da requisição de custos${pageToken ? ' (página '+pageToken+')' : ''}: ${url.toString()} (sem token de autenticação)`);
+  
+      // Fazer a requisição com retry automático para maior robustez
+      let retries = 0;
+      const maxRetries = 3;
+      let response: Response | undefined;
       
-      // Fazer a requisição
-      const response = await fetchWithTimeout(url.toString(), {
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_ADMIN_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      }, 15000);
-      
-      if (!response.ok) {
-        let errorMessage = `Erro HTTP ${response.status}: ${response.statusText}`;
-        
+      while (retries < maxRetries) {
         try {
-          const error = await response.json();
-          console.error('Resposta da API de custos com erro:', error);
+          response = await fetchWithTimeout(url.toString(), {
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_ADMIN_KEY}`,
+        'Content-Type': 'application/json'
+      }
+          }, 20000); // 20 segundos de timeout
           
-          // Fornecer mensagem de erro mais detalhada
-          if (error.error?.message) {
-            errorMessage = error.error.message;
-            
-            if (errorMessage.includes('insufficient permissions')) {
-              errorMessage += '. É necessário utilizar uma API key com permissões de administrador (api.usage.read).';
+          if (response.ok) break; // Saímos do loop se a resposta for bem-sucedida
+          
+          // Log detalhado do erro para diagnóstico
+          console.warn(`Tentativa ${retries + 1}/${maxRetries}: Erro ${response.status} ao buscar dados de custos`);
+          
+          // Se o erro for 429 (Too Many Requests) ou 5xx (erro de servidor), retentamos
+          if (response.status === 429 || response.status >= 500) {
+            retries++;
+            const delay = Math.pow(2, retries) * 1000; // Backoff exponencial
+            console.warn(`Aguardando ${delay}ms antes da próxima tentativa...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            // Para erros específicos, damos tratamento especial
+            if (response.status === 400) {
+              const errorBody = await response.text();
+              console.error('Erro 400 detalhado:', errorBody);
+              
+              // Se for o erro de end_date/start_date, ajustamos os parâmetros e retentamos
+              if (errorBody.includes('end_date must come after start_date')) {
+                console.warn('Detectado erro de end_date/start_date. Ajustando período para garantir diferença entre datas...');
+                
+                // Modificar a estratégia - usar ontem e anteontem como período
+                const yesterdayEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1, 23, 59, 59, 999));
+                const dayBeforeYesterdayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 2, 0, 0, 0));
+                
+                const newStartTimestamp = Math.floor(dayBeforeYesterdayStart.getTime() / 1000);
+                const newEndTimestamp = Math.floor(yesterdayEnd.getTime() / 1000);
+                
+                console.log(`Ajustando período para: ${dayBeforeYesterdayStart.toISOString()} até ${yesterdayEnd.toISOString()}`);
+                console.log(`Novos timestamps: ${newStartTimestamp} até ${newEndTimestamp}`);
+                
+                // Reconstruir a URL com os novos parâmetros
+                url.searchParams.set('start_time', newStartTimestamp.toString());
+                url.searchParams.set('end_time', newEndTimestamp.toString());
+                
+                // Tentar novamente com os novos parâmetros
+                retries++;
+                continue;
+              }
             }
+            
+            // Para outros erros, não tentamos novamente
+            break;
           }
-        } catch (e) {
-          // Se não conseguir analisar o JSON, usa a mensagem padrão
-          console.error('Não foi possível analisar o erro da API:', e);
+  } catch (error) {
+          // Erro de rede ou timeout
+          retries++;
+          if (retries >= maxRetries) {
+            console.error('Erro após todas as tentativas:', error);
+            throw error; // Propagar o erro após máximo de tentativas
+          }
+          
+          const delay = Math.pow(2, retries) * 1000;
+          console.warn(`Erro de rede/timeout. Tentativa ${retries}/${maxRetries}. Aguardando ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
         }
+      }
+      
+      // Se após as tentativas ainda não temos uma resposta válida
+      if (!response) {
+        throw new Error('Falha na comunicação com a API da OpenAI após múltiplas tentativas');
+  }
+  
+  if (!response.ok) {
+    let errorMessage = `Erro HTTP ${response.status}: ${response.statusText}`;
+    
+    try {
+          // Tentar extrair mensagem de erro detalhada
+          const responseText = await response.text();
+          let errorData;
+          try {
+            errorData = JSON.parse(responseText);
+          } catch (e) {
+            // Se não for JSON válido, usamos o texto bruto
+            errorData = { error: { message: responseText } };
+          }
+          
+          console.error('Resposta da API de custos com erro:', errorData);
+      
+      // Fornecer mensagem de erro mais detalhada
+          if (errorData.error?.message) {
+            errorMessage = errorData.error.message;
         
-        throw new Error(`Erro ao buscar dados de custos: ${errorMessage}`);
+        if (errorMessage.includes('insufficient permissions')) {
+          errorMessage += '. É necessário utilizar uma API key com permissões de administrador (api.usage.read).';
+        }
       }
-      
-      // Processar resposta
+    } catch (e) {
+          // Se não conseguir analisar o erro, usa a mensagem padrão
+      console.error('Não foi possível analisar o erro da API:', e);
+    }
+    
+    throw new Error(`Erro ao buscar dados de custos: ${errorMessage}`);
+  }
+  
+  // Processar resposta
       const data = await response.json();
-      
-      // Para depuração: verificar a estrutura dos dados retornados
-      if (!data.data || !Array.isArray(data.data)) {
-        console.warn('Formato de dados de custos inesperado:', data);
-        throw new Error('A API da OpenAI retornou dados em um formato inesperado. Verifique os logs para mais detalhes.');
-      }
-      
-      if (data.data.length > 0) {
+  
+  // Para depuração: verificar a estrutura dos dados retornados
+  if (!data.data || !Array.isArray(data.data)) {
+    console.warn('Formato de dados de custos inesperado:', data);
+    throw new Error('A API da OpenAI retornou dados em um formato inesperado. Verifique os logs para mais detalhes.');
+  }
+  
+  if (data.data.length > 0) {
         console.log(`Dados de custos recebidos nesta página: ${data.data.length} buckets`);
+        
+        // Log detalhado para diagnóstico
+        let totalCostInPage = 0;
+        data.data.forEach((bucket: any, index: number) => {
+          const bucketDate = new Date(bucket.start_time * 1000);
+          const dateStr = bucketDate.toISOString().split('T')[0];
+          
+          if (bucket.results && bucket.results.length > 0) {
+            let bucketTotal = 0;
+            bucket.results.forEach((result: any) => {
+              if (result.amount && result.amount.value) {
+                const value = typeof result.amount.value === 'number' 
+                  ? result.amount.value 
+                  : parseFloat(result.amount.value || '0');
+                bucketTotal += isNaN(value) ? 0 : value;
+              }
+            });
+            
+            console.log(`  Bucket ${index} (${dateStr}): ${bucket.results.length} resultados, total $${bucketTotal.toFixed(4)}`);
+            totalCostInPage += bucketTotal;
+  } else {
+            console.log(`  Bucket ${index} (${dateStr}): sem resultados`);
+          }
+        });
+        
+        console.log(`Total de custos nesta página: $${totalCostInPage.toFixed(4)}`);
       } else {
         console.log('Nenhum dado de custo retornado para o período solicitado nesta página');
       }
@@ -315,9 +503,9 @@ export async function fetchOpenAICosts(days = 30): Promise<OpenAICostResult[]> {
       // Processamento melhorado para evitar duplicação
       // Use um mapa para rastrear timestamps já processados
       const processedBuckets = new Map<string, boolean>();
-      
-      // Processar cada "bucket" (período) de dados
-      for (const bucket of data.data) {
+  
+  // Processar cada "bucket" (período) de dados
+  for (const bucket of data.data) {
         // Verificar se este bucket de tempo já foi processado
         const bucketKey = `${bucket.start_time}`;
         if (processedBuckets.has(bucketKey)) {
@@ -328,23 +516,37 @@ export async function fetchOpenAICosts(days = 30): Promise<OpenAICostResult[]> {
         // Marcar este bucket como processado
         processedBuckets.set(bucketKey, true);
         
-        if (bucket.results && Array.isArray(bucket.results)) {
-          for (const result of bucket.results) {
+    if (bucket.results && Array.isArray(bucket.results)) {
+          // Para diagnóstico
+          const bucketDate = new Date(bucket.start_time * 1000);
+          const dateStr = bucketDate.toISOString().split('T')[0];
+          
+      for (const result of bucket.results) {
             // Aplicar arredondamento consistente para os valores de custo
             if (result.amount && typeof result.amount.value === 'number') {
-              // Arredondar para 2 casas decimais, mesmo padrão do dashboard da OpenAI
-              result.amount.value = Math.round(result.amount.value * 100) / 100;
+              // Armazenar com toda a precisão, arredondar apenas na exibição
+              // Isso evita erros de arredondamento nos cálculos agregados
+              result.amount.value = result.amount.value;
             }
             
-            costResults.push({
-              bucket: {
-                start_time: bucket.start_time,
-                end_time: bucket.end_time
-              },
-              amount: result.amount,
-              line_item: result.line_item,
-              project_id: result.project_id,
-              organization_id: result.organization_id
+            // Adicionando metadados úteis para filtros posteriores
+            const resultWithDate = {
+              ...result,
+              // Adicionar a data no formato ISO para facilitar filtros posteriores
+              date_iso: dateStr
+            };
+            
+        costResults.push({
+          bucket: {
+            start_time: bucket.start_time,
+            end_time: bucket.end_time
+          },
+          amount: result.amount,
+          line_item: result.line_item,
+          project_id: result.project_id,
+              organization_id: result.organization_id,
+              // Incluir o metadado adicional
+              date_iso: dateStr
             });
           }
         }
@@ -360,9 +562,9 @@ export async function fetchOpenAICosts(days = 30): Promise<OpenAICostResult[]> {
     }
     
     console.log(`Total de registros de custos processados: ${costResults.length}`);
-    
-    // Ordenar por data (mais recente primeiro)
-    costResults.sort((a, b) => b.bucket.start_time - a.bucket.start_time);
+  
+  // Ordenar por data (mais recente primeiro)
+  costResults.sort((a, b) => b.bucket.start_time - a.bucket.start_time);
     
     // Log para depuração: mostrar o total de custos
     const totalCost = costResults.reduce((sum, item) => {
@@ -375,10 +577,28 @@ export async function fetchOpenAICosts(days = 30): Promise<OpenAICostResult[]> {
       return sum;
     }, 0);
     
-    console.log(`Total de custos para os últimos ${limitedDays} dias: $${totalCost.toFixed(2)}`);
+    // Calcular custos dos últimos 7 dias para referência
+    // Usar UTC para consistência com a API da OpenAI
+    const sevenDaysAgo = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 6, 0, 0, 0));
+    const sevenDaysAgoTimestamp = Math.floor(sevenDaysAgo.getTime() / 1000);
     
-    // Retornar dados normalizados
-    return costResults;
+    const last7DaysCost = costResults.reduce((sum, item) => {
+      if (item.bucket.start_time >= sevenDaysAgoTimestamp && item.amount && item.amount.value) {
+        const value = typeof item.amount.value === 'number' 
+          ? item.amount.value 
+          : parseFloat(item.amount.value || '0');
+        return sum + (isNaN(value) ? 0 : value);
+      }
+      return sum;
+    }, 0);
+    
+    // Log detalhado dos custos com quebra por período para referência cruzada com o dashboard
+    console.log(`Custos por período:`);
+    console.log(`- Total de todos os custos recuperados: $${totalCost.toFixed(4)}`);
+    console.log(`- Últimos 7 dias (${sevenDaysAgo.toISOString().split('T')[0]} até hoje): $${last7DaysCost.toFixed(4)}`);
+  
+  // Retornar dados normalizados
+  return costResults;
   } catch (error) {
     console.error('Erro ao buscar dados de custos da OpenAI:', error);
     throw error;
@@ -429,49 +649,45 @@ export function processCompletionsData(data: any[]): {
   
   console.log(`Processando ${data.length} registros da API da OpenAI`);
   
-  // Verificando registros únicos por data e bucket de tempo
-  const uniqueBuckets = new Map<string, boolean>();
-  let duplicateCount = 0;
-  
-  // Primeiro passo: verificar e registrar possíveis duplicações
-  data.forEach(item => {
-    const bucketKey = `${item.start_time}-${item.model || 'unknown'}`;
-    if (uniqueBuckets.has(bucketKey)) {
-      duplicateCount++;
-    } else {
-      uniqueBuckets.set(bucketKey, true);
-    }
-  });
-  
-  if (duplicateCount > 0) {
-    console.warn(`⚠️ Detectadas ${duplicateCount} possíveis duplicações nos dados brutos. Processando com cuidado para evitar dupla contagem.`);
-  }
-  
-  // Processar dados por data usando Map para garantir unicidade
-  const dateMap = new Map<string, any>();
-  
-  // Mapa para rastrear buckets já processados por data
-  const processedDateBuckets = new Map<string, Set<string>>();
+  // Passo 1: Identifique buckets únicos para evitar duplicação
+  // Para cada bucket (dia), queremos ter certeza de que contamos cada modelo apenas uma vez
+  // Criamos um Map onde a chave é uma combinação de timestamp e modelo
+  const uniqueData = new Map<string, any>();
   
   data.forEach(item => {
-    // Obter data a partir do timestamp ou do campo date
-    const date = item.date || new Date(item.start_time * 1000).toISOString().split('T')[0];
-    const bucketKey = `${item.start_time}-${item.model || 'unknown'}`;
-    
-    // Inicializar o conjunto de buckets processados para esta data, se necessário
-    if (!processedDateBuckets.has(date)) {
-      processedDateBuckets.set(date, new Set<string>());
-    }
-    
-    // Verificar se este bucket já foi processado para esta data
-    const processedBuckets = processedDateBuckets.get(date)!;
-    if (processedBuckets.has(bucketKey)) {
-      // Já processamos este bucket para esta data, pular
+    // Se o item não tiver timestamps, não podemos processar corretamente
+    if (typeof item.start_time !== 'number') {
+      console.warn('Item sem timestamp válido, ignorando:', item);
       return;
     }
     
-    // Marcar este bucket como processado para esta data
-    processedBuckets.add(bucketKey);
+    const bucketDate = new Date(item.start_time * 1000);
+    const dateKey = bucketDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    const modelKey = item.model || 'unknown';
+    const uniqueKey = `${dateKey}:${modelKey}`;
+    
+    // Se já temos este modelo para esta data, vamos verificar e possivelmente atualizar
+    if (uniqueData.has(uniqueKey)) {
+      const existing = uniqueData.get(uniqueKey);
+      
+      // Se o item atual tem timestamp mais recente, substituímos o existente
+      if (item.end_time > existing.end_time) {
+        uniqueData.set(uniqueKey, item);
+      }
+    } else {
+      // Caso contrário, adicionamos este item ao mapa
+      uniqueData.set(uniqueKey, item);
+    }
+  });
+  
+  console.log(`Após remoção de possíveis duplicações: ${uniqueData.size} registros únicos (de ${data.length} originais)`);
+  
+  // Passo 2: Processar dados por data com base no conjunto sem duplicação
+  const dateMap = new Map<string, any>();
+  
+  uniqueData.forEach((item, key) => {
+    const bucketDate = new Date(item.start_time * 1000);
+    const date = bucketDate.toISOString().split('T')[0]; // YYYY-MM-DD
     
     // Inicializar o objeto para esta data, se necessário
     if (!dateMap.has(date)) {
@@ -484,38 +700,19 @@ export function processCompletionsData(data: any[]): {
       });
     }
     
-    // Atualizar os dados para esta data
+    // Atualizar os dados para esta data com verificação rigorosa de tipos
     const dateEntry = dateMap.get(date);
-    dateEntry.input_tokens += item.input_tokens || 0;
-    dateEntry.output_tokens += item.output_tokens || 0;
-    dateEntry.input_cached_tokens += item.input_cached_tokens || 0;
-    dateEntry.requests += item.num_model_requests || 0;
+    dateEntry.input_tokens += typeof item.input_tokens === 'number' ? item.input_tokens : 0;
+    dateEntry.output_tokens += typeof item.output_tokens === 'number' ? item.output_tokens : 0;
+    dateEntry.input_cached_tokens += typeof item.input_cached_tokens === 'number' ? item.input_cached_tokens : 0;
+    dateEntry.requests += typeof item.num_model_requests === 'number' ? item.num_model_requests : 0;
   });
   
-  // Processar dados por modelo usando Map para garantir unicidade
+  // Passo 3: Processar dados por modelo sem duplicação
   const modelMap = new Map<string, any>();
   
-  // Mapa para rastrear buckets já processados por modelo
-  const processedModelBuckets = new Map<string, Set<string>>();
-  
-  data.forEach(item => {
+  uniqueData.forEach((item, key) => {
     const model = item.model || 'desconhecido';
-    const bucketKey = `${item.start_time}-${item.model || 'unknown'}`;
-    
-    // Inicializar o conjunto de buckets processados para este modelo, se necessário
-    if (!processedModelBuckets.has(model)) {
-      processedModelBuckets.set(model, new Set<string>());
-    }
-    
-    // Verificar se este bucket já foi processado para este modelo
-    const processedBuckets = processedModelBuckets.get(model)!;
-    if (processedBuckets.has(bucketKey)) {
-      // Já processamos este bucket para este modelo, pular
-      return;
-    }
-    
-    // Marcar este bucket como processado para este modelo
-    processedBuckets.add(bucketKey);
     
     // Inicializar o objeto para este modelo, se necessário
     if (!modelMap.has(model)) {
@@ -529,12 +726,12 @@ export function processCompletionsData(data: any[]): {
       });
     }
     
-    // Atualizar os dados para este modelo
+    // Atualizar os dados para este modelo com verificação rigorosa de tipos
     const modelEntry = modelMap.get(model);
-    modelEntry.input_tokens += item.input_tokens || 0;
-    modelEntry.output_tokens += item.output_tokens || 0;
-    modelEntry.input_cached_tokens += item.input_cached_tokens || 0;
-    modelEntry.requests += item.num_model_requests || 0;
+    modelEntry.input_tokens += typeof item.input_tokens === 'number' ? item.input_tokens : 0;
+    modelEntry.output_tokens += typeof item.output_tokens === 'number' ? item.output_tokens : 0;
+    modelEntry.input_cached_tokens += typeof item.input_cached_tokens === 'number' ? item.input_cached_tokens : 0;
+    modelEntry.requests += typeof item.num_model_requests === 'number' ? item.num_model_requests : 0;
   });
   
   // Calcular eficiência para cada modelo
@@ -542,14 +739,12 @@ export function processCompletionsData(data: any[]): {
     model.efficiency = calculateEfficiency(model.input_tokens, model.output_tokens);
   });
   
-  // Calcular totais exatamente como a OpenAI Dashboard
-  // Importante: usar os dados já agregados para evitar dupla contagem
+  // Passo 4: Calcular totais a partir dos dados por data (mais confiável para o dashboard da OpenAI)
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let totalInputCachedTokens = 0;
   let totalRequests = 0;
   
-  // Usar os dados agregados por data
   dateMap.forEach(dateEntry => {
     totalInputTokens += dateEntry.input_tokens;
     totalOutputTokens += dateEntry.output_tokens;
@@ -557,7 +752,7 @@ export function processCompletionsData(data: any[]): {
     totalRequests += dateEntry.requests;
   });
   
-  // Verificação cruzada com os dados agregados por modelo
+  // Verificação cruzada com os dados por modelo para validação
   let modelTotalInputTokens = 0;
   let modelTotalOutputTokens = 0;
   let modelTotalRequests = 0;
@@ -583,14 +778,14 @@ export function processCompletionsData(data: any[]): {
   const totalEfficiency = calculateEfficiency(totalInputTokens, totalOutputTokens);
   
   // Log para depuração
-  console.log(`Totais calculados após eliminação de duplicações: ${totalInputTokens + totalOutputTokens} tokens totais (${totalInputTokens} input, ${totalOutputTokens} output), ${totalRequests} requisições`);
+  console.log(`Totais calculados: ${totalInputTokens.toLocaleString()} input tokens, ${totalOutputTokens.toLocaleString()} output tokens (${(totalInputTokens + totalOutputTokens).toLocaleString()} total), ${totalRequests} requisições`);
   
   // Ordenar dados por data (mais recente primeiro)
   const byDateArray = Array.from(dateMap.values()).sort((a, b) => {
     return new Date(b.date).getTime() - new Date(a.date).getTime();
   });
   
-  // Ordenar dados por modelo (mais usado primeiro)
+  // Ordenar dados por modelo (mais usado primeiro - por total de tokens, não apenas entrada)
   const byModelArray = Array.from(modelMap.values()).sort((a, b) => {
     return (b.input_tokens + b.output_tokens) - (a.input_tokens + a.output_tokens);
   });
@@ -602,8 +797,8 @@ export function processCompletionsData(data: any[]): {
       input_tokens: totalInputTokens,
       output_tokens: totalOutputTokens,
       input_cached_tokens: totalInputCachedTokens,
-      input_audio_tokens: 0, // Não calculamos explicitamente, mas incluímos no retorno
-      output_audio_tokens: 0, // Não calculamos explicitamente, mas incluímos no retorno
+      input_audio_tokens: 0, // Definimos como 0 pois não estamos atualmente processando tokens de áudio
+      output_audio_tokens: 0, // Definimos como 0 pois não estamos atualmente processando tokens de áudio
       requests: totalRequests,
       efficiency: totalEfficiency
     }
@@ -627,34 +822,30 @@ export async function fetchTodayCompletionsUsage(): Promise<{
     throw new Error('Chave de API da OpenAI não configurada (OPENAI_ADMIN_KEY)');
   }
   
-  // Usar UTC para garantir alinhamento com a API da OpenAI
+  // Obter a data atual em UTC
   const now = new Date();
   
-  // Obter a data em UTC para garantir que estamos buscando o dia correto
-  const utcNow = new Date(now.getTime());
+  // Calcular o início do dia atual em UTC
+  const startOfTodayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
   
-  // Informar data em UTC e local para diagnóstico
-  console.log(`Data atual (local): ${now.toISOString()} / ${now.toString()}`);
-  console.log(`Data atual (UTC): ${utcNow.toUTCString()}`);
-  
-  // CORREÇÃO: Garantir que estamos buscando os dados com a mesma granularidade da OpenAI Dashboard
-  // O dashboard da OpenAI mostra dados em UTC com corte à meia-noite
-  
-  // Timestamps em UTC: início do dia atual (00:00:00) até o momento atual + 1 minuto
-  const startOfTodayUTC = new Date(Date.UTC(utcNow.getUTCFullYear(), utcNow.getUTCMonth(), utcNow.getUTCDate(), 0, 0, 0));
-  
-  // Adicionamos 1 minuto ao tempo atual para garantir que dados recentes sejam incluídos
-  const nowPlusBuffer = new Date(utcNow.getTime() + 60000);
-  const endTimestampUTC = Math.floor(nowPlusBuffer.getTime() / 1000);
+  // Para evitar problemas com dados muito recentes, adicionar um buffer ao horário final
+  const bufferMs = 60 * 60 * 1000; // 1 hora em milissegundos
+  const endDateTime = new Date(now.getTime() + bufferMs);
+  const endTimestampUTC = Math.floor(endDateTime.getTime() / 1000);
   
   // Data de hoje em formato ISO para logs e filtragem
   const todayISODate = startOfTodayUTC.toISOString().split('T')[0]; // YYYY-MM-DD
   
+  console.log(`Data atual (local): ${now.toLocaleString()}`);
+  console.log(`Data atual (UTC): ${now.toUTCString()}`);
+  console.log(`Data ISO de hoje: ${todayISODate}`);
+  
+  // CORREÇÃO IMPORTANTE: Para garantir que pegamos apenas os dados de hoje
+  // 1. Buscar apenas o dia de hoje em vez de ontem + hoje
   const startTimestamp = Math.floor(startOfTodayUTC.getTime() / 1000);
   
-  console.log(`Período da consulta direto: ${startOfTodayUTC.toISOString()} até ${new Date(endTimestampUTC * 1000).toISOString()}`);
+  console.log(`Consulta específica para hoje: ${startOfTodayUTC.toISOString()} até ${endDateTime.toISOString()}`);
   console.log(`Timestamps: ${startTimestamp} até ${endTimestampUTC} (diferença de ${endTimestampUTC - startTimestamp} segundos)`);
-  console.log(`Buscando apenas para o dia atual: ${todayISODate}`);
   
   // 1. Buscar dados de uso de completions para hoje
   let usageResponse;
@@ -665,7 +856,6 @@ export async function fetchTodayCompletionsUsage(): Promise<{
     usageUrl.searchParams.append('bucket_width', '1d');
     usageUrl.searchParams.append('group_by', 'model');
     
-    console.log(`Buscando dados de completions para hoje: ${todayISODate}`);
     console.log(`URL da requisição: ${usageUrl.toString()} (sem token de autenticação)`);
     
     usageResponse = await fetchWithTimeout(usageUrl.toString(), {
@@ -673,7 +863,7 @@ export async function fetchTodayCompletionsUsage(): Promise<{
         'Authorization': `Bearer ${process.env.OPENAI_ADMIN_KEY}`,
         'Content-Type': 'application/json'
       }
-    }, 15000);
+    }, 20000);
     
     if (!usageResponse.ok) {
       const errorText = await usageResponse.text();
@@ -693,7 +883,6 @@ export async function fetchTodayCompletionsUsage(): Promise<{
     costUrl.searchParams.append('end_time', endTimestampUTC.toString());
     costUrl.searchParams.append('bucket_width', '1d');
     
-    console.log(`Buscando dados de custos para hoje: ${todayISODate}`);
     console.log(`URL da requisição de custos: ${costUrl.toString()} (sem token de autenticação)`);
     
     costResponse = await fetchWithTimeout(costUrl.toString(), {
@@ -701,7 +890,7 @@ export async function fetchTodayCompletionsUsage(): Promise<{
         'Authorization': `Bearer ${process.env.OPENAI_ADMIN_KEY}`,
         'Content-Type': 'application/json'
       }
-    }, 15000);
+    }, 20000);
     
     if (!costResponse.ok) {
       const errorText = await costResponse.text();
@@ -718,9 +907,27 @@ export async function fetchTodayCompletionsUsage(): Promise<{
   const usageResults: OpenAICompletionUsage[] = [];
   
   if (usageData.data && Array.isArray(usageData.data)) {
+    console.log(`Recebidos ${usageData.data.length} buckets de uso da API`);
+    
     for (const bucket of usageData.data) {
+      const bucketDateUTC = new Date(bucket.start_time * 1000);
+      const bucketDateStr = bucketDateUTC.toISOString().split('T')[0];
+      
+      console.log(`Processando bucket para data ${bucketDateStr} (timestamp: ${bucket.start_time})`);
+      
+      // IMPORTANTE: Verificar explicitamente se este bucket é para hoje
+      if (bucketDateStr !== todayISODate) {
+        console.log(`Ignorando bucket que não é de hoje: ${bucketDateStr} != ${todayISODate}`);
+            continue;
+          }
+          
       if (bucket.results && Array.isArray(bucket.results)) {
+        console.log(`  Encontrados ${bucket.results.length} resultados neste bucket`);
+        
         for (const result of bucket.results) {
+          // Log detalhado para diagnóstico
+          console.log(`  Modelo: ${result.model || 'N/A'}, Input: ${result.input_tokens || 0}, Output: ${result.output_tokens || 0}, Reqs: ${result.num_model_requests || 0}`);
+          
           usageResults.push({
             start_time: bucket.start_time,
             end_time: bucket.end_time,
@@ -737,8 +944,12 @@ export async function fetchTodayCompletionsUsage(): Promise<{
             batch: result.batch
           });
         }
+      } else {
+        console.log(`  Nenhum resultado encontrado neste bucket`);
       }
     }
+  } else {
+    console.warn('API retornou um formato inesperado ou sem dados para uso');
   }
   
   // Processar dados de custos
@@ -746,9 +957,27 @@ export async function fetchTodayCompletionsUsage(): Promise<{
   const costResults: OpenAICostResult[] = [];
   
   if (costData.data && Array.isArray(costData.data)) {
+    console.log(`Recebidos ${costData.data.length} buckets de custos da API`);
+    
     for (const bucket of costData.data) {
+      const bucketDateUTC = new Date(bucket.start_time * 1000);
+      const bucketDateStr = bucketDateUTC.toISOString().split('T')[0];
+      
+      console.log(`Processando bucket de custo para data ${bucketDateStr} (timestamp: ${bucket.start_time})`);
+      
+      // IMPORTANTE: Verificar explicitamente se este bucket é para hoje
+      if (bucketDateStr !== todayISODate) {
+        console.log(`Ignorando bucket de custo que não é de hoje: ${bucketDateStr} != ${todayISODate}`);
+        continue;
+      }
+      
       if (bucket.results && Array.isArray(bucket.results)) {
+        console.log(`  Encontrados ${bucket.results.length} resultados de custo neste bucket`);
+        
         for (const result of bucket.results) {
+          // Log para diagnóstico
+          console.log(`  Item: ${result.line_item || 'N/A'}, Valor: $${result.amount?.value || 0} ${result.amount?.currency || 'USD'}`);
+          
           costResults.push({
             bucket: {
               start_time: bucket.start_time,
@@ -757,16 +986,44 @@ export async function fetchTodayCompletionsUsage(): Promise<{
             amount: result.amount,
             line_item: result.line_item,
             project_id: result.project_id,
-            organization_id: result.organization_id
+            organization_id: result.organization_id,
+            date_iso: bucketDateStr // Adicionando a data ISO para facilitar filtragem posterior
           });
         }
+        } else {
+        console.log(`  Nenhum resultado de custo encontrado neste bucket`);
       }
     }
+  } else {
+    console.warn('API retornou um formato inesperado ou sem dados para custos');
   }
   
-  console.log(`Obtidos ${usageResults.length} registros de uso e ${costResults.length} registros de custos para hoje`);
+  // Resumo para diagnóstico
+  console.log(`Dados extraídos para hoje (${todayISODate}):`);
+  console.log(`- Total de registros de uso: ${usageResults.length}`);
+  console.log(`- Total de registros de custo: ${costResults.length}`);
   
-  return {
+  // Calcular totais para o log
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0; 
+  let totalRequests = 0;
+  let totalCost = 0;
+  
+  usageResults.forEach(item => {
+    totalInputTokens += item.input_tokens || 0;
+    totalOutputTokens += item.output_tokens || 0;
+    totalRequests += item.num_model_requests || 0;
+  });
+  
+  costResults.forEach(item => {
+    if (item.amount && typeof item.amount.value === 'number') {
+      totalCost += item.amount.value;
+    }
+  });
+  
+  console.log(`Resumo do dia atual: ${totalInputTokens} input tokens, ${totalOutputTokens} output tokens, ${totalRequests} requisições, $${totalCost.toFixed(4)} custo`);
+  
+    return {
     usage: usageResults,
     costs: costResults
   };
@@ -780,8 +1037,8 @@ export async function fetchTodayCompletionsUsage(): Promise<{
  * @returns Estimativa de tokens de entrada e saída
  */
 export function estimateTokensFromCost(cost: number, modelType: string = 'gpt-4'): {
-  input_tokens: number;
-  output_tokens: number;
+    input_tokens: number;
+    output_tokens: number;
 } {
   // Preços aproximados por 1000 tokens (em USD)
   // Fonte: https://openai.com/pricing
@@ -852,10 +1109,9 @@ export function estimateTokensFromCost(cost: number, modelType: string = 'gpt-4'
 export function extractTodayData(usageData: OpenAICompletionUsage[], costData: OpenAICostResult[]) {
   // Usar UTC para alinhamento com a API da OpenAI
   const now = new Date();
-  const utcNow = new Date(now.getTime());
   
   // Criar data de hoje em UTC - início do dia UTC
-  const todayUTC = new Date(Date.UTC(utcNow.getUTCFullYear(), utcNow.getUTCMonth(), utcNow.getUTCDate(), 0, 0, 0));
+  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
   
   // Timestamp do início do dia atual em UTC
   const todayTimestamp = Math.floor(todayUTC.getTime() / 1000);
@@ -877,13 +1133,28 @@ export function extractTodayData(usageData: OpenAICompletionUsage[], costData: O
   }
   
   // Depurar dados recebidos para diagnóstico
+  console.log("=== TODOS OS DADOS DE USO RECEBIDOS ===");
   safeUsageData.forEach((item, index) => {
     const itemDate = new Date(item.start_time * 1000).toISOString().split('T')[0];
     console.log(`Registro de uso ${index}: data=${itemDate}, requests=${item.num_model_requests || 0}, model=${item.model || 'unknown'}`);
   });
   
-  // Usar todos os dados recebidos, eles já devem estar filtrados para hoje pela API
-  console.log(`Processando ${safeUsageData.length} registros de uso e ${safeCostData.length} registros de custo`);
+  // IMPORTANTE: Filtrar corretamente apenas os dados do dia atual
+  // Comparar as datas ISO para garantir que estamos pegando apenas dados de hoje
+  const todayUsageData = safeUsageData.filter(item => {
+    const itemDate = new Date(item.start_time * 1000).toISOString().split('T')[0];
+    const isToday = itemDate === todayISODate;
+    console.log(`Item com data ${itemDate} ${isToday ? 'É' : 'NÃO É'} de hoje (${todayISODate})`);
+    return isToday;
+  });
+  
+  const todayCostData = safeCostData.filter(item => {
+    // Usar o campo date_iso se disponível, ou calcular a partir do timestamp
+    const itemDate = item.date_iso || new Date(item.bucket.start_time * 1000).toISOString().split('T')[0];
+    return itemDate === todayISODate;
+  });
+  
+  console.log(`Após filtro por data: ${todayUsageData.length} registros de uso e ${todayCostData.length} registros de custo para hoje`);
   
   // Calcular totais de uso com verificações de segurança
   let totalInputTokens = 0;
@@ -891,9 +1162,9 @@ export function extractTodayData(usageData: OpenAICompletionUsage[], costData: O
   let totalInputCachedTokens = 0;
   let totalRequests = 0;
   
-  // Se há dados de uso, calcular a partir deles
-  if (safeUsageData.length > 0) {
-    safeUsageData.forEach(item => {
+  // Se há dados de uso para hoje, calcular a partir deles
+  if (todayUsageData.length > 0) {
+    todayUsageData.forEach(item => {
       totalInputTokens += typeof item.input_tokens === 'number' ? item.input_tokens : 0;
       totalOutputTokens += typeof item.output_tokens === 'number' ? item.output_tokens : 0;
       totalInputCachedTokens += typeof item.input_cached_tokens === 'number' ? item.input_cached_tokens : 0;
@@ -905,9 +1176,9 @@ export function extractTodayData(usageData: OpenAICompletionUsage[], costData: O
   let totalCost = 0;
   let modelHint = ''; // Para detectar qual modelo está sendo usado
   
-  safeCostData.forEach((item, index) => {
-    const itemDate = new Date(item.bucket.start_time * 1000).toISOString().split('T')[0];
-    console.log(`Registro de custo ${index}: data=${itemDate}, valor=${item.amount?.value || 0} ${item.amount?.currency || 'USD'}`);
+  todayCostData.forEach((item, index) => {
+    const itemDate = item.date_iso || new Date(item.bucket.start_time * 1000).toISOString().split('T')[0];
+    console.log(`Registro de custo ${index} para hoje: data=${itemDate}, valor=${item.amount?.value || 0} ${item.amount?.currency || 'USD'}`);
     
     if (item.amount) {
       if (typeof item.amount.value === 'number') {
@@ -929,8 +1200,8 @@ export function extractTodayData(usageData: OpenAICompletionUsage[], costData: O
   // Arredondar custo para dois decimais como no dashboard da OpenAI
   totalCost = Math.round(totalCost * 100) / 100;
   
-  console.log(`Totais para hoje: ${totalInputTokens} input tokens, ${totalOutputTokens} output tokens, ${totalRequests} requisições, $${totalCost.toFixed(2)} custo`);
-  
+  console.log(`Totais para hoje (${todayISODate}): ${totalInputTokens} input tokens, ${totalOutputTokens} output tokens, ${totalRequests} requisições, $${totalCost.toFixed(2)} custo`);
+
   return {
     date: todayISODate,
     usage: {
@@ -942,4 +1213,4 @@ export function extractTodayData(usageData: OpenAICompletionUsage[], costData: O
     },
     cost: totalCost
   };
-}
+} 

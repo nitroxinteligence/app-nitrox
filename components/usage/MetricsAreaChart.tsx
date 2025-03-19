@@ -151,10 +151,20 @@ const processChartData = (metricsData: MetricsData, selectedMetrics: string[]) =
   const formatDate = (dateStr: string) => {
     try {
       // Converter YYYY-MM-DD para DD de MMM
-      const date = new Date(dateStr);
+      // CORREÇÃO: Garantir que a data seja interpretada corretamente, sem problemas de timezone
+      const [year, month, day] = dateStr.split('-').map(Number);
+      
+      // Criar data usando UTC para evitar ajustes de timezone
+      const date = new Date(Date.UTC(year, month - 1, day));
+      
+      // Log para diagnóstico do problema
+      console.log(`Formatando data: Original=${dateStr}, UTC=${date.toISOString()}`);
+      
+      // Usar o formatador com as opções adequadas
       return new Intl.DateTimeFormat('pt-BR', {
         day: '2-digit',
-        month: 'short'
+        month: 'short',
+        timeZone: 'UTC' // Importante: usar UTC para evitar ajustes de timezone
       }).format(date);
     } catch (e) {
       console.error('Erro ao formatar data:', dateStr, e);

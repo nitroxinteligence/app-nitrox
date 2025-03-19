@@ -101,14 +101,14 @@ interface CostResult {
 }
 
 // Definir o tipo OpenAIUsageSummary com propriedades opcionais para resolver erros de tipagem
-interface OpenAIUsageSummary {
+  interface OpenAIUsageSummary {
   subscription?: { usageLimit: number; remainingCredits: number; } | null;
   currentMonth?: { startDate: string; endDate: string; percentChange: number; } | null;
   currentMonthTotal?: number;
   previousMonth?: { startDate: string; endDate: string; percentChange: number; } | null;
   previousMonthTotal?: number;
   months?: any[];
-  completionsUsage?: CompletionsUsageData;
+    completionsUsage?: CompletionsUsageData;
 }
 
 // Chave para armazenar os dados no localStorage
@@ -170,9 +170,9 @@ export default function useOpenAIUsage(apiKey?: string): OpenAIUsageHookResult {
       byDate: [],
       byModel: [],
       total: {
-        input_tokens: 0,
-        output_tokens: 0,
-        input_cached_tokens: 0,
+                input_tokens: 0,
+                output_tokens: 0,
+                input_cached_tokens: 0,
         input_audio_tokens: 0,
         output_audio_tokens: 0,
         requests: 0,
@@ -193,7 +193,7 @@ export default function useOpenAIUsage(apiKey?: string): OpenAIUsageHookResult {
       console.log('🔍 Criando estrutura vazia para dados do dia atual...');
       
       // Retornar estrutura vazia
-      return {
+        return {
         input_tokens: 0,
         output_tokens: 0,
         input_cached_tokens: 0,

@@ -155,24 +155,66 @@ function processCostsData(costData) {
   
   // Calcular custos para diferentes períodos
   const now = new Date();
-  const sevenDaysAgo = new Date(now.getTime() - 7*24*60*60*1000).toISOString().split('T')[0];
-  const thirtyDaysAgo = new Date(now.getTime() - 30*24*60*60*1000).toISOString().split('T')[0];
+  
+  // Corrigir o cálculo das datas dos últimos 7 e 30 dias
+  // Vamos calcular exatamente 7 e 30 dias atrás a partir de hoje
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // Início do dia atual
+  
+  // Calcular exatamente 7 dias atrás (incluindo hoje)
+  const sevenDaysAgo = new Date(today);
+  sevenDaysAgo.setDate(today.getDate() - 6); // 6 dias atrás + hoje = 7 dias
+  const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
+  
+  // Calcular exatamente 30 dias atrás (incluindo hoje)
+  const thirtyDaysAgo = new Date(today);
+  thirtyDaysAgo.setDate(today.getDate() - 29); // 29 dias atrás + hoje = 30 dias
+  const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
+  
+  console.log(`Período para cálculo dos últimos 7 dias: ${sevenDaysAgoStr} até hoje`);
+  console.log(`Período para cálculo dos últimos 30 dias: ${thirtyDaysAgoStr} até hoje`);
   
   let totalCost = 0;
   let last7daysCost = 0;
   let last30daysCost = 0;
   
+  // Listar todas as datas disponíveis para diagnóstico
+  console.log("Datas disponíveis para custos:");
+  const availableDates = new Set(byDate.map(item => item.date));
+  console.log([...availableDates].sort().join(', '));
+  
   byDate.forEach(item => {
-    totalCost += parseFloat(item.amount_value);
+    // Adicionar log para cada item processado
+    console.log(`Processando custo para data ${item.date}: $${typeof item.amount_value === 'string' ? parseFloat(item.amount_value).toFixed(4) : item.amount_value.toFixed(4)}`);
     
-    if (item.date >= sevenDaysAgo) {
-      last7daysCost += parseFloat(item.amount_value);
+    // Garantir que o valor seja numérico
+    const costValue = typeof item.amount_value === 'string' 
+      ? parseFloat(item.amount_value) 
+      : (item.amount_value || 0);
+    
+    // Validar se o valor é um número válido
+    if (isNaN(costValue)) {
+      console.warn(`Valor inválido para data ${item.date}: ${item.amount_value}`);
+      return; // Continuar com o próximo item
     }
     
-    if (item.date >= thirtyDaysAgo) {
-      last30daysCost += parseFloat(item.amount_value);
+    // Acumular no total geral
+    totalCost += costValue;
+    
+    // Verificar se está dentro do período de 7 dias
+    if (item.date >= sevenDaysAgoStr) {
+      console.log(`  ✓ Dentro dos últimos 7 dias`);
+      last7daysCost += costValue;
+    }
+    
+    // Verificar se está dentro do período de 30 dias
+    if (item.date >= thirtyDaysAgoStr) {
+      console.log(`  ✓ Dentro dos últimos 30 dias`);
+      last30daysCost += costValue;
     }
   });
+  
+  // Log para diagnóstico dos totais calculados
+  console.log(`Custos calculados: Total=$${totalCost.toFixed(4)}, Últimos 7 dias=$${last7daysCost.toFixed(4)}, Últimos 30 dias=$${last30daysCost.toFixed(4)}`);
   
   // Arredondar para 2 casas decimais
   totalCost = Math.round(totalCost * 100) / 100;

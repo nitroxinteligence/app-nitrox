@@ -49,6 +49,68 @@ interface MetricsData {
   dates: string[];
 }
 
+// Define interface for OpenAIUsageSummary
+interface OpenAIUsageSummary {
+  subscription: any | null;
+  currentMonth: any | null;
+  currentMonthTotal: number;
+  previousMonth: any | null;
+  previousMonthTotal: number;
+  months: any[];
+  completionsUsage: {
+    byDate: Array<{
+      date: string;
+      input_tokens: number;
+      output_tokens: number;
+      input_cached_tokens: number;
+      requests: number;
+    }>;
+    byModel: Array<{
+      name: string;
+      input_tokens: number;
+      output_tokens: number;
+      input_cached_tokens: number;
+      requests: number;
+      efficiency: number;
+    }>;
+    total: {
+      input_tokens: number;
+      output_tokens: number;
+      input_cached_tokens: number;
+      input_audio_tokens: number;
+      output_audio_tokens: number;
+      requests: number;
+      efficiency: number;
+    };
+    dailyStats?: {
+      input_tokens: number;
+      output_tokens: number;
+      input_cached_tokens: number;
+      output_audio_tokens: number;
+      requests: number;
+      efficiency: number;
+      totalCost?: number;
+    };
+    costEstimates?: {
+      daily: number;
+      last24h: number;
+      last7days: number;
+      last30days: number;
+      byModel: { [key: string]: number };
+    };
+    actualCosts?: {
+      byDate: Array<{
+        date: string;
+        amount_value: number | string;
+        amount_currency: string;
+      }>;
+      total: number;
+      last7days: number;
+      last30days: number;
+    };
+  };
+}
+
 export default function CreditsPage() {
   const {
     usageData,
@@ -84,6 +146,171 @@ export default function CreditsPage() {
     }
   }, []);
   
+  // Função unificada para sincronização eficiente de todos os dados
+  const syncAllData = async (options = { showToast: true, isInitialLoad: false }) => {
+    // Se for uma sincronização manual (botão), mostrar indicadores visuais
+    if (!options.isInitialLoad) {
+      setSyncInProgress(true);
+      setCostSyncInProgress(true);
+      setDataReady(false);
+      
+      if (options.showToast) {
+        toast.loading('Sincronizando dados...', {
+          id: 'sync-data',
+          description: 'Recuperando informações atualizadas da API OpenAI'
+        });
+      }
+    }
+
+    // CARREGAMENTO INSTANTÂNEO - Verificar se temos dados em cache local
+    try {
+      const cachedDataStr = localStorage.getItem('siaflow_completions_data');
+      if (cachedDataStr && options.isInitialLoad) {
+        try {
+          const cachedData = JSON.parse(cachedDataStr);
+          if (cachedData && cachedData.completionsUsage) {
+            console.log('🚀 Usando dados em cache para exibição instantânea');
+            // Usar temporariamente os dados em cache enquanto carregamos dados frescos
+            if (!dataReady) {
+              setDataReady(true);
+            }
+          }
+        } catch (e) {
+          console.warn('⚠️ Erro ao processar dados em cache:', e);
+        }
+      }
+    } catch (e) {
+      // Ignorar erros de acesso ao localStorage
+    }
+
+    // Definir um timeout CURTO para garantir que a interface seja mostrada rapidamente
+    // em caso de falha de carregamento
+    if (options.isInitialLoad) {
+      setTimeout(() => {
+        if (!dataReady) {
+          console.log('⏱️ Timeout de carregamento atingido, exibindo interface de fallback...');
+          setDataReady(true);
+        }
+      }, 2000); // Mostrar a interface após 2 segundos se os dados não carregarem
+    }
+
+    try {
+      console.log(`🔄 Iniciando sincronização${options.isInitialLoad ? ' inicial' : ' completa'} de dados...`);
+      
+      // NOVA IMPLEMENTAÇÃO: Carregar todos os dados de uma vez
+      console.log('Carregando TODOS os dados simultaneamente...');
+      
+      // 1. Criar um objeto para armazenar todos os resultados
+      const results = {
+        basicData: null,
+        todayData: null,
+        historicalData: null,
+        costData: null
+      };
+      
+      // 2. Carregar todos os dados em paralelo
+      const [basicData, todayData, historicalData, costData] = await Promise.all([
+        // Dados básicos
+        refreshData().catch(err => {
+          console.warn('⚠️ Falha ao carregar dados básicos:', err);
+          return null as any;
+        }),
+        
+        // Dados específicos de hoje
+        syncTodayData().catch(err => {
+          console.warn('⚠️ Falha ao carregar dados do dia atual:', err);
+          return null as any;
+        }),
+        
+        // Dados históricos
+        syncCompletionsData().catch(err => {
+          console.warn('⚠️ Falha ao carregar dados históricos:', err);
+          return null as any;
+        }),
+        
+        // Dados de custos
+        syncCostData().catch(err => {
+          console.warn('⚠️ Falha ao carregar dados de custos:', err);
+          return null as any;
+        })
+      ]);
+      
+      // 3. Armazenar todos os resultados
+      results.basicData = basicData;
+      results.todayData = todayData;
+      results.historicalData = historicalData;
+      results.costData = costData;
+      
+      // 4. Agora que temos todos os dados, mostrar a interface
+      if (!dataReady) {
+        console.log('✅ Todos os dados carregados simultaneamente, exibindo interface completa...');
+        setDataReady(true);
+      }
+      
+      // 5. Registrar horário da sincronização bem-sucedida
+      const now = new Date();
+      setLastSyncTime(now);
+      
+      // 6. Salvar timestamp no localStorage
+      try {
+        localStorage.setItem('siaflow_completions_last_updated', now.getTime().toString());
+      } catch (storageError) {
+        console.warn('⚠️ Não foi possível salvar o timestamp:', storageError);
+      }
+      
+      // 7. Calcular estatísticas da sincronização
+      const success = Object.values(results).filter(Boolean).length;
+      const total = Object.keys(results).length;
+      console.log(`✓ Sincronização concluída: ${success}/${total} operações bem-sucedidas`);
+      
+      // 8. Notificar o usuário sobre o resultado (apenas para sincronizações manuais)
+      if (!options.isInitialLoad && options.showToast) {
+        if (success === total || success >= 3) { // Pelo menos 3 operações bem-sucedidas
+          toast.success('Dados sincronizados com sucesso!', {
+            id: 'sync-data',
+            description: `Última atualização: ${now.toLocaleTimeString()}`
+          });
+        } else if (success > 0) {
+          toast.warning('Sincronização parcial concluída', {
+            id: 'sync-data',
+            description: `${success}/${total} operações concluídas. Alguns dados podem estar incompletos.`
+          });
+        } else {
+          throw new Error('Falha em todas as operações de sincronização');
+        }
+      }
+      
+      // 9. Limpar indicadores visuais
+      setSyncInProgress(false);
+      setCostSyncInProgress(false);
+      
+      return results;
+      
+    } catch (error) {
+      console.error('❌ Erro na sincronização de dados:', error);
+      
+      if (options.showToast) {
+        toast.error('Falha na sincronização dos dados', {
+          id: 'sync-data',
+          description: error instanceof Error 
+            ? error.message 
+            : 'Erro de conexão com a API. Verifique o console para mais detalhes.'
+        });
+      }
+      
+      // Mesmo com erro, garantir que a interface esteja disponível
+      if (!dataReady) {
+        setDataReady(true);
+      }
+      
+      // Remover indicadores de sincronização
+      setSyncInProgress(false);
+      setCostSyncInProgress(false);
+      
+      return null;
+    }
+  };
+
   // Efeito para carregamento inicial dos dados (usa ref para executar apenas uma vez)
   useEffect(() => {
     const loadInitialData = async () => {
@@ -92,52 +319,9 @@ export default function CreditsPage() {
       
       setDataReady(false); // Definindo que os dados não estão prontos
       
-      console.log('🔄 Realizando carregamento inicial de dados...');
-      
       try {
-        // Etapa 1: Buscar apenas dados básicos primeiro para garantir que a interface seja carregada
-        console.log('Etapa 1: Carregando dados básicos...');
-        await refreshData().catch(err => {
-          console.warn('Aviso: Falha ao carregar dados básicos, continuando com dados locais:', err);
-        });
-        
-        // Dar tempo para o estado ser atualizado
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-        // Marcar os dados como prontos para mostrar a interface, mesmo que incompleta
-        setDataReady(true);
-        
-        // Etapa 2: Carregar dados do dia atual com maior prioridade
-        console.log('Etapa 2: Carregando especificamente dados do dia atual...');
-        await syncTodayData().catch(err => {
-          console.warn('Aviso: Falha ao sincronizar dados do dia atual, continuando com demais dados:', err);
-        });
-        
-        // Pausa pequena para processamento
-        await new Promise(resolve => setTimeout(resolve, 200));
-        
-        // Etapa 3: Carregar dados históricos em segundo plano
-        console.log('Etapa 3: Carregando dados históricos em segundo plano...');
-        Promise.all([
-          syncCompletionsData().catch(err => {
-            console.warn('Aviso: Falha ao sincronizar dados históricos:', err);
-          }),
-          syncCostData().catch(err => {
-            console.warn('Aviso: Falha ao sincronizar dados de custos:', err);
-          })
-        ]).finally(() => {
-          console.log('Carregamento de dados históricos e custos concluído');
-        });
-        
-        // Registrar horário da sincronização
-        const now = new Date();
-        setLastSyncTime(now);
-        try {
-          localStorage.setItem('siaflow_completions_last_updated', now.getTime().toString());
-        } catch (storageError) {
-          console.warn('Não foi possível salvar o timestamp de sincronização:', storageError);
-        }
-        
+        // Usar a função unificada, mas com opção de carregamento inicial
+        await syncAllData({ showToast: false, isInitialLoad: true });
       } catch (err) {
         console.error('Erro no processo de carregamento inicial:', err);
         
@@ -155,20 +339,16 @@ export default function CreditsPage() {
     
     loadInitialData();
     
-    // Não incluímos usageData ou refreshData como dependências para evitar loops
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  
+
   // Efeito separado para o intervalo de atualização - sincronização automática a cada hora
   useEffect(() => {
     const intervalId = setInterval(() => {
       console.log('🔄 Sincronizando dados automaticamente (intervalo de 1h)...');
       
-      // Sincronização automática dos dados de Uso e Custos
-      Promise.all([
-        syncTodayData(), // Usar a função específica para dados de hoje para maior precisão
-        syncCostData()
-      ]).catch(err => {
+      // Usar a função unificada, mas sem mostrar toasts para atualizações automáticas
+      syncAllData({ showToast: false, isInitialLoad: false }).catch(err => {
         console.error('Erro ao sincronizar dados automaticamente:', err);
       });
       
@@ -177,173 +357,11 @@ export default function CreditsPage() {
     return () => clearInterval(intervalId);
     
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Sem dependências para executar apenas uma vez
-  
-  // Adicionar função específica para sincronizar apenas os dados do dia atual
-  const handleSyncTodayData = async () => {
-    setSyncInProgress(true);
-    
-    toast.loading('Sincronizando dados do dia atual...', {
-      id: 'sync-today',
-      description: 'Buscando os dados mais recentes do dia atual'
-    });
-    
-    try {
-      await syncTodayData();
-      
-      // Registrar o horário da sincronização bem-sucedida
-      const now = new Date();
-      setLastSyncTime(now);
-      
-      // Salvar o timestamp no localStorage também
-      try {
-        localStorage.setItem('siaflow_completions_last_updated', now.getTime().toString());
-      } catch (storageError) {
-        console.warn('Não foi possível salvar o timestamp de sincronização:', storageError);
-      }
-      
-      toast.success('Dados de hoje atualizados com sucesso!', {
-        id: 'sync-today',
-        description: `Última atualização: ${now.toLocaleTimeString()}`
-      });
-    } catch (error) {
-      console.error('❌ Erro ao sincronizar dados do dia atual:', error);
-      
-      // Extrair mensagem de erro mais detalhada da API quando disponível
-      let errorMessage = error instanceof Error ? error.message : 'Erro de conexão com a API';
-      let errorDescription = 'Verifique a conexão ou tente novamente mais tarde.';
-      
-      // Tentar extrair informações mais detalhadas de erros da OpenAI
-      if (errorMessage.includes('OpenAI') || errorMessage.includes('API')) {
-        try {
-          // Tentar extrair o JSON do erro da OpenAI se estiver presente
-          const openaiErrorMatch = errorMessage.match(/\{[\s\S]*\}/);
-          if (openaiErrorMatch) {
-            const errorJson = JSON.parse(openaiErrorMatch[0]);
-            if (errorJson.error && errorJson.error.message) {
-              errorDescription = `Erro da OpenAI: ${errorJson.error.message}`;
-            }
-          }
-        } catch (e) {
-          console.warn('Não foi possível extrair detalhes do erro da OpenAI:', e);
-        }
-      }
-      
-      toast.error('Falha na sincronização dos dados de hoje', {
-        id: 'sync-today',
-        description: errorDescription
-      });
-    } finally {
-      setSyncInProgress(false);
-    }
-  };
+  }, []);
 
-  // Função para sincronizar todos os dados (hoje, todos os dados e custos) em sequência
+  // Função para o botão Sincronizar Dados
   const handleSyncAllData = async () => {
-    setSyncInProgress(true);
-    setCostSyncInProgress(true);
-    
-    toast.loading('Sincronizando todos os dados...', {
-      id: 'sync-all',
-      description: 'Atualizando dados de hoje, histórico e custos'
-    });
-    
-    try {
-      // Executar operações sequencialmente para garantir consistência
-      console.log('Iniciando sincronização completa de dados...');
-      
-      // 1. Sincronizar dados históricos primeiro
-      console.log('Passo 1: Sincronizando dados históricos...');
-      await syncCompletionsData();
-      
-      // 2. Sincronizar dados de custos
-      console.log('Passo 2: Sincronizando dados de custos...');
-      await syncCostData();
-      
-      // 3. Sincronizar dados de hoje por último (mais importantes e para não serem sobrescritos)
-      console.log('Passo 3: Sincronizando dados específicos de hoje...');
-      await syncTodayData();
-      
-      // Registrar o horário da sincronização bem-sucedida
-      const now = new Date();
-      setLastSyncTime(now);
-      
-      // Salvar o timestamp no localStorage também
-      try {
-        localStorage.setItem('siaflow_completions_last_updated', now.getTime().toString());
-      } catch (storageError) {
-        console.warn('Não foi possível salvar o timestamp de sincronização:', storageError);
-      }
-      
-      toast.success('Sincronização concluída com sucesso!', {
-        id: 'sync-all',
-        description: `Última atualização: ${now.toLocaleTimeString()}`
-      });
-    } catch (error) {
-      console.error('❌ Erro na sincronização de dados:', error);
-      
-      toast.error('Falha na sincronização dos dados', {
-        id: 'sync-all',
-        description: error instanceof Error 
-          ? error.message 
-          : 'Erro de conexão com a API. Verifique o console para mais detalhes.'
-      });
-    } finally {
-      setSyncInProgress(false);
-      setCostSyncInProgress(false);
-    }
-  };
-
-  const handleSyncCompletionsData = async () => {
-    setSyncInProgress(true);
-    
-    toast.info('Sincronizando dados de completions...', {
-      description: 'Este processo pode levar alguns segundos'
-    });
-    
-    try {
-      await syncCompletionsData();
-      
-      // Registrar o horário da sincronização bem-sucedida
-      const now = new Date();
-      setLastSyncTime(now);
-      
-      // Salvar o timestamp no localStorage também
-      try {
-        localStorage.setItem('siaflow_completions_last_updated', now.getTime().toString());
-      } catch (storageError) {
-        console.warn('Não foi possível salvar o timestamp de sincronização:', storageError);
-      }
-      
-      toast.success('Dados sincronizados com sucesso!', {
-        description: `Última atualização: ${now.toLocaleTimeString()}`
-      });
-    } catch (error) {
-      console.error('❌ Erro ao sincronizar dados de completions:', error);
-      toast.error('Falha na sincronização dos dados', {
-        description: error instanceof Error 
-          ? error.message 
-          : 'Erro de conexão com a API. Verifique o console para mais detalhes.'
-      });
-    } finally {
-      setSyncInProgress(false);
-    }
-  };
-
-  const handleSyncCostData = async () => {
-    setCostSyncInProgress(true);
-    
-    try {
-      await syncCostData();
-      // A função já lida com atualizações de estado e notificações
-    } catch (error) {
-      console.error('Erro ao obter dados de custos reais:', error);
-      toast.error('Falha ao obter dados de custos', {
-        description: error instanceof Error ? error.message : 'Erro desconhecido'
-      });
-    } finally {
-      setCostSyncInProgress(false);
-    }
+    await syncAllData({ showToast: true, isInitialLoad: false });
   };
 
   // Verificar se há dados de completions válidos - modificado para não depender de input_tokens
@@ -364,7 +382,7 @@ export default function CreditsPage() {
   };
 
   // Preparar dados para o gráfico de área
-  const prepareMetricsAreaData = () => {
+  const metricsAreaData = () => {
     if (!usageData?.completionsUsage?.byDate || !Array.isArray(usageData.completionsUsage.byDate)) {
       return {
         inputTokens: [],
@@ -375,163 +393,146 @@ export default function CreditsPage() {
       };
     }
 
-    // Usar data em UTC para alinhamento com API da OpenAI
+    console.log('============ DEBUGGING EVOLUÇÃO DE MÉTRICAS ============');
+    
+    // Obter a data atual em UTC e garantir que é o início do dia
     const now = new Date();
-    const utcNow = new Date(now.getTime());
-    const todayUTC = new Date(Date.UTC(utcNow.getUTCFullYear(), utcNow.getUTCMonth(), utcNow.getUTCDate()));
+    const todayString = now.toISOString().split('T')[0]; // YYYY-MM-DD no formato local
     
-    // Formato YYYY-MM-DD em UTC
-    const today = todayUTC.toISOString().split('T')[0]; 
-    console.log('Data atual em UTC (hoje):', today);
-    console.log('Data atual local:', new Date().toISOString().split('T')[0]);
-
-    // Ordenar dados por data
-    const sortedData = [...usageData.completionsUsage.byDate].sort((a, b) => 
-      new Date(a.date).getTime() - new Date(b.date).getTime()
-    );
+    // Hoje em formato UTC para alinhamento com API da OpenAI
+    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const todayUTCString = todayUTC.toISOString().split('T')[0]; // YYYY-MM-DD em UTC
     
-    // Verificar se o dia atual existe nos dados
-    const hasToday = sortedData.some(item => item.date === today);
-    console.log('Dia atual (UTC) presente nos dados (antes):', hasToday);
+    console.log(`Data atual (local): ${todayString}`);
+    console.log(`Data atual (UTC): ${todayUTCString}`);
     
-    // Verificar se temos dados do dia atual em dailyStats
-    const hasDailyStats = usageData.completionsUsage.dailyStats && 
-                         Object.keys(usageData.completionsUsage.dailyStats).length > 0;
-    console.log('Dados de dailyStats disponíveis:', hasDailyStats);
+    // SOLUÇÃO ASSERTIVA: Gerar explicitamente datas diárias para os últimos 31 dias
+    const dates31Days: string[] = [];
+    for (let i = 30; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      // Formatar como YYYY-MM-DD
+      const dateFormatted = date.toISOString().split('T')[0];
+      dates31Days.push(dateFormatted);
+    }
     
-    // Sempre usar dailyStats para os dados de hoje, garantindo que apareçam mesmo se não estiverem em byDate
-    if (!hasToday && hasDailyStats && usageData.completionsUsage.dailyStats) {
-      console.log('Adicionando dados do dia atual (UTC) ao gráfico baseado em dailyStats');
+    // Verificar se o dia atual está presente
+    console.log(`Dia atual (${todayString}) presente na lista?: ${dates31Days.includes(todayString)}`);
+    console.log(`Primeira data: ${dates31Days[0]}, Última data: ${dates31Days[dates31Days.length-1]}`);
+    
+    // Criar array explícito de resultados
+    const resultData = dates31Days.map(date => {
+      // Procurar por esta data nos dados existentes
+      const existingData = usageData.completionsUsage?.byDate?.find(item => item.date === date);
       
-      // Criar cópia dos dados de hoje para adicionar ao array
-      sortedData.push({
-        date: today,
-        input_tokens: usageData.completionsUsage.dailyStats.input_tokens || 0,
-        output_tokens: usageData.completionsUsage.dailyStats.output_tokens || 0,
-        input_cached_tokens: usageData.completionsUsage.dailyStats.input_cached_tokens || 0,
-        requests: usageData.completionsUsage.dailyStats.requests || 0
-      });
+      // Se encontrou dados existentes, usar eles
+      if (existingData) {
+        return {
+          date: date,
+          input_tokens: existingData.input_tokens || 0,
+          output_tokens: existingData.output_tokens || 0,
+          input_cached_tokens: existingData.input_cached_tokens || 0,
+          requests: existingData.requests || 0
+        };
+      }
       
-      console.log('Dados do dia atual (UTC) adicionados ao gráfico:', sortedData[sortedData.length - 1]);
-    } else if (!hasToday) {
-      // Se não temos dailyStats, criar registro vazio para hoje
-      console.log('Criando registro vazio para o dia atual (UTC) no gráfico');
-      sortedData.push({
-        date: today,
+      // Se não encontrou, criar entrada com zeros
+      return {
+        date: date,
         input_tokens: 0,
         output_tokens: 0,
         input_cached_tokens: 0,
         requests: 0
-      });
-    } else {
-      console.log('Dados do dia atual (UTC) já presentes no conjunto de dados');
+      };
+    });
+    
+    // Usar dados de hoje de dailyStats se disponíveis (sobreescrevendo quaisquer outros)
+    if (usageData.completionsUsage?.dailyStats && 
+        Object.keys(usageData.completionsUsage?.dailyStats || {}).length > 0) {
+      
+      // Encontrar o índice do dia atual
+      const todayIndex = resultData.findIndex(item => item.date === todayString);
+      
+      if (todayIndex >= 0) {
+        console.log(`Encontrado índice para o dia atual (${todayString}) na posição ${todayIndex}`);
+        console.log('Atualizando com dados mais recentes de dailyStats');
+        
+        resultData[todayIndex] = {
+          ...resultData[todayIndex],
+          input_tokens: usageData.completionsUsage?.dailyStats?.input_tokens || 0,
+          output_tokens: usageData.completionsUsage?.dailyStats?.output_tokens || 0,
+          input_cached_tokens: usageData.completionsUsage?.dailyStats?.input_cached_tokens || 0,
+          requests: usageData.completionsUsage?.dailyStats?.requests || 0
+        };
+      } else {
+        console.warn(`ALERTA: Não foi possível encontrar o dia atual (${todayString}) na lista de datas`);
+      }
     }
     
-    // Verificar novamente após potencialmente adicionar dados
-    const hasTodayAfter = sortedData.some(item => item.date === today);
-    console.log('Dia atual (UTC) presente nos dados (depois):', hasTodayAfter);
+    // Obter dados de custos
+    const costsByDate = usageData.completionsUsage?.actualCosts?.byDate || [];
     
-    // Verificar e exibir os dados do dia atual como diagnóstico
-    const todayData = sortedData.find(item => item.date === today);
-    console.log('Dados do dia atual (UTC) para o gráfico:', todayData);
-
-    // Obter os dados de custos reais por data se disponíveis
-    const costsByDate = usageData.completionsUsage.actualCosts?.byDate || [];
-    
-    // Validar e verificar os dados recebidos para diagnóstico
-    console.log("=== DIAGNÓSTICO DE ALINHAMENTO DE DADOS ===");
-    console.log("Datas de uso disponíveis:", sortedData.map(d => d.date).join(', '));
-    console.log("Datas de custo disponíveis:", costsByDate.map(c => c.date).join(', '));
-    
-    // Criar um mapa de custos por data para fácil acesso
+    // Criar mapa de custo por data
     const costMap = new Map();
     
-    if (costsByDate && costsByDate.length > 0) {
-      // Log para diagnóstico
-      console.log('Dados de custos por data recebidos:', 
-        costsByDate.map(c => `${c.date}: $${typeof c.amount_value === 'string' ? parseFloat(c.amount_value).toFixed(2) : c.amount_value.toFixed(2)}`).join(', ')
-      );
+    // Preencher o mapa com os custos disponíveis
+    if (costsByDate.length > 0) {
+      console.log(`Processando ${costsByDate.length} registros de custos`);
       
       costsByDate.forEach(costEntry => {
-        // Garantir que o valor é um número
         const costValue = typeof costEntry.amount_value === 'string' 
           ? parseFloat(costEntry.amount_value) 
           : (costEntry.amount_value || 0);
         
-        // Usar a data como está - agora já corrigida pelo backend
         costMap.set(costEntry.date, costValue);
       });
     }
     
-    // Verificar se temos o custo para o dia atual em UTC
-    const hasTodayCost = costMap.has(today);
-    console.log(`Custo para o dia atual (${today}) encontrado no mapa de custos:`, hasTodayCost);
-    
-    if (!hasTodayCost) {
-      // Se não temos o custo real do dia atual nos dados da API, temos 3 opções:
-      // 1. Usar o totalCost dos dailyStats se disponível (prioridade máxima)
-      if (usageData.completionsUsage.dailyStats && 
-          typeof usageData.completionsUsage.dailyStats.totalCost !== 'undefined') {
-        // Converter para número se necessário
-        const todayCost = typeof usageData.completionsUsage.dailyStats.totalCost === 'string'
-          ? parseFloat(usageData.completionsUsage.dailyStats.totalCost)
-          : usageData.completionsUsage.dailyStats.totalCost;
-          
-        console.log(`Usando custo diário dos dailyStats: $${todayCost}`);
-        costMap.set(today, todayCost);
-      }
-      // 2. Se não tem totalCost, usar valor zero em vez de estimativa
-      else {
-        console.log(`Definindo custo zero para hoje (${today}) por não haver dados de custo`);
-        costMap.set(today, 0);
-      }
+    // Adicionar custo de hoje se disponível nos dailyStats
+    if (usageData.completionsUsage?.dailyStats?.totalCost !== undefined) {
+      const todayCost = typeof usageData.completionsUsage.dailyStats.totalCost === 'string'
+        ? parseFloat(usageData.completionsUsage.dailyStats.totalCost)
+        : usageData.completionsUsage.dailyStats.totalCost;
+      
+      console.log(`Definindo custo de hoje (${todayString}) para $${todayCost.toFixed(4)}`);
+      costMap.set(todayString, todayCost);
     }
     
-    // Debug: exibir o mapa de custos
-    console.log('Mapa de custos por data (após processamento):', 
-      [...costMap.entries()].map(([date, value]) => `${date}: $${value.toFixed(4)}`).join(', '));
-    
-    // Garantir que as datas usadas no gráfico estejam no mesmo formato que as de custos
-    const normalizedDates = sortedData.map(d => {
-      // Acessar a data original
-      const originalDate = d.date;
-      
-      // Usar a data original
-      return {
-        normalizedDate: originalDate,
-        originalData: d
-      };
-    });
-    
-    // Debug: verificar correspondências
-    normalizedDates.forEach(d => {
-      const cost = costMap.get(d.normalizedDate);
-      if (cost !== undefined) {
-        console.log(`✓ Correspondência encontrada: ${d.normalizedDate} = $${cost.toFixed(4)}`);
-      } else {
-        console.log(`✗ Sem correspondência para data: ${d.normalizedDate}`);
+    // Garantir que todas as datas tenham um custo (mesmo que zero)
+    resultData.forEach(item => {
+      if (!costMap.has(item.date)) {
+        costMap.set(item.date, 0);
       }
     });
-
-    // Ordenar datas cronologicamente para o gráfico
-    normalizedDates.sort((a, b) => 
-      new Date(a.normalizedDate).getTime() - new Date(b.normalizedDate).getTime()
-    );
     
-    return {
-      inputTokens: normalizedDates.map(d => d.originalData.input_tokens || 0),
-      outputTokens: normalizedDates.map(d => d.originalData.output_tokens || 0),
-      requisicoes: normalizedDates.map(d => d.originalData.requests || 0),
-      totalCosts: normalizedDates.map(d => {
-        // Usar a data normalizada para buscar o custo correspondente
-        const cost = costMap.get(d.normalizedDate) || 0;
-        return cost;
-      }),
-      dates: normalizedDates.map(d => d.normalizedDate)
+    // DIAGNÓSTICO FINAL: Verificar todos os dados antes de retornar
+    console.log('--------- Diagnóstico final dos dados do gráfico ---------');
+    console.log(`Total de dias: ${resultData.length}`);
+    console.log(`Último dia: ${resultData[resultData.length - 1].date} (deve ser ${todayString})`);
+    
+    // Ajuste FINAL: garantir que a última data é HOJE, independente de timezone
+    if (resultData[resultData.length - 1].date !== todayString) {
+      console.warn(`CORREÇÃO DE EMERGÊNCIA: Forçando última data para o dia atual (${todayString})`);
+      resultData[resultData.length - 1].date = todayString;
+    }
+    
+    // Gerar estrutura final de dados para o gráfico
+    const result = {
+      inputTokens: resultData.map(d => d.input_tokens || 0),
+      outputTokens: resultData.map(d => d.output_tokens || 0),
+      requisicoes: resultData.map(d => d.requests || 0),
+      totalCosts: resultData.map(d => costMap.get(d.date) || 0),
+      dates: resultData.map(d => d.date)
     };
+    
+    // Verificação final
+    console.log(`Datas finais: primeiro=${result.dates[0]}, último=${result.dates[result.dates.length-1]}`);
+    console.log('============ FIM DEBUGGING ============');
+    
+    return result;
   };
 
-  const metricsAreaData = prepareMetricsAreaData();
+  const metricsAreaDataResult = metricsAreaData();
 
   // Auxiliar para garantir a exibição dos dados de hoje
   const getTodayTokensDisplay = () => {
@@ -909,17 +910,29 @@ export default function CreditsPage() {
                 <Card className="bg-[#0f0f0f] border-[#222224] overflow-hidden">
                   <CardHeader>
                     <div className="flex justify-between items-center">
-                      <div>
+                  <div>
                         <CardTitle className="text-lg font-medium text-gray-100">Métricas Detalhadas</CardTitle>
                         <CardDescription className="text-[#878787]">
                           Dados diretos da API OpenAI
-                        </CardDescription>
+                    </CardDescription>
                       </div>
-                    </div>
-                  </CardHeader>
+                  </div>
+                </CardHeader>
                   
-                  <CardContent>
+                <CardContent>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                      {/* Total de Tokens */}
+                      <div className="bg-[#161616] p-4 rounded-md">
+                        <p className="text-sm text-[#878787] mb-1">Total de Tokens</p>
+                        <p className="text-xl font-medium">
+                          {(
+                            (usageData?.completionsUsage?.total?.input_tokens || 0) + 
+                            (usageData?.completionsUsage?.total?.output_tokens || 0) + 
+                            (usageData?.completionsUsage?.total?.input_cached_tokens || 0)
+                          ).toLocaleString()}
+                        </p>
+                      </div>
+                      
                       <div className="bg-[#161616] p-4 rounded-md">
                         <p className="text-sm text-[#878787] mb-1">Input Tokens</p>
                         <p className="text-xl font-medium">
@@ -931,6 +944,13 @@ export default function CreditsPage() {
                         <p className="text-sm text-[#878787] mb-1">Output Tokens</p>
                         <p className="text-xl font-medium">
                           {(usageData?.completionsUsage?.total?.output_tokens || 0).toLocaleString()}
+                        </p>
+                      </div>
+                      
+                      <div className="bg-[#161616] p-4 rounded-md">
+                        <p className="text-sm text-[#878787] mb-1">Tokens Cacheados</p>
+                        <p className="text-xl font-medium">
+                          {(usageData?.completionsUsage?.total?.input_cached_tokens || 0).toLocaleString()}
                         </p>
                       </div>
                       
@@ -998,13 +1018,13 @@ export default function CreditsPage() {
                     )}
                     
                     {/* Gráfico de Área para Métricas */}
-                    {metricsAreaData.dates.length > 0 && (
+                    {metricsAreaDataResult.dates.length > 0 && (
                       <div className="mt-6">
-                        <MetricsAreaChart data={metricsAreaData} />
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+                        <MetricsAreaChart data={metricsAreaDataResult} />
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
               </section>
             )}
           </>

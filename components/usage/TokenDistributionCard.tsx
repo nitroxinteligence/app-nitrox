@@ -107,7 +107,10 @@ export default function TokenDistributionCard({ inputTokens, outputTokens, cache
   const validInput = isNaN(inputTokens) ? 0 : Math.max(0, inputTokens);
   const validOutput = isNaN(outputTokens) ? 0 : Math.max(0, outputTokens);
   const validCached = isNaN(cachedTokens) ? 0 : Math.max(0, cachedTokens);
+  
+  // CORREÇÃO: Calcular total de tokens explicitamente 
   const totalTokens = validInput + validOutput + validCached;
+  console.log(`TokenDistributionCard - Total Tokens: ${totalTokens} (Input: ${validInput}, Output: ${validOutput}, Cached: ${validCached})`);
   
   // Preparar os dados para o gráfico
   const tokenData = React.useMemo(() => [
@@ -268,7 +271,12 @@ export default function TokenDistributionCard({ inputTokens, outputTokens, cache
           </PieChart>
         </ChartContainer>
       </CardContent>
-      <div className="grid grid-cols-3 gap-4 mt-4 p-4">
+      {/* Adicionar informação do total de tokens */}
+      <div className="text-center mt-2 mb-2">
+        <span className="text-xs text-[#adadad]">Total de Tokens:</span>
+        <span className="text-lg font-medium text-white ml-2">{totalTokens.toLocaleString()}</span>
+      </div>
+      <div className="grid grid-cols-3 gap-4 mt-2 p-4">
         <div className="flex flex-col items-center">
           <span className="text-xs text-[#adadad]">Input Tokens</span>
           <span className="text-lg font-medium text-white">{validInput.toLocaleString()}</span>
