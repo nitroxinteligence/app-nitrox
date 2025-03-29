@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
-import { Home, BarChart3, Bot, Settings, PanelRightOpen, Users, MessageSquare } from "lucide-react"
+import { Home, BarChart3, Bot, Settings, PanelRightOpen, Users, MessageSquare, TrendingUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { NovidadesPopup } from "@/components/novidades-popup"
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
@@ -27,6 +27,7 @@ export function Sidebar({ onExpandChange }: SidebarProps) {
   const quickActions = [
     { href: "/", icon: Home, label: "Início" },
     { href: "/chats", icon: Bot, label: "Chats Inteligentes" },
+    { href: "/trafego", icon: TrendingUp, label: "Gestor de Tráfego" },
     { href: "/metricas", icon: BarChart3, label: "Métricas" },
     { href: "/crm", icon: Users, label: "CRM" },
     { href: "/conversas", icon: MessageSquare, label: "Conversas" },
@@ -72,6 +73,7 @@ export function Sidebar({ onExpandChange }: SidebarProps) {
                       "nav-item w-full h-10 flex items-center rounded-lg focus:outline-none focus-visible:outline-none overflow-hidden whitespace-nowrap gap-3",
                       (pathname === item.href || 
                        (item.href === "/chats" && (pathname.startsWith("/chats") || pathname.startsWith("/chat/"))) ||
+                       (item.href === "/trafego" && pathname.startsWith("/trafego")) ||
                        (item.href === "/metricas" && pathname.startsWith("/metricas")) ||
                        (item.href === "/crm" && pathname.startsWith("/crm")) ||
                        (item.href === "/conversas" && pathname.startsWith("/conversas")))

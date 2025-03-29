@@ -16,6 +16,7 @@ import { MessageLoading } from "@/components/ui/message-loading"
 import { processFiles } from "@/lib/file-processor"
 import { analyzeDocument, analyzeImage } from "@/lib/groq"
 import { BriefingService } from "@/lib/briefing-service"
+import { CreateCampaignButton } from "@/components/campaign/create-campaign-button"
 
 export function ChatInterface() {
   const { messages, isLoading: isContextLoading, error, fetchMessages } = useChatContext()
@@ -24,6 +25,7 @@ export function ChatInterface() {
   const [isSending, setIsSending] = useState(false)
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [briefingContent, setBriefingContent] = useState<string | null>(null)
+  const [briefingData, setBriefingData] = useState<any>(null)
   const params = useParams()
   const router = useRouter()
   const agentId = params?.agentId as string
@@ -66,6 +68,19 @@ export function ChatInterface() {
     if (!agentId) return
     const content = await BriefingService.getBriefingContent(agentId as string)
     setBriefingContent(content)
+    
+    if (content) {
+      try {
+        if (typeof content === 'object') {
+          setBriefingData(content)
+        } else {
+          const parsedContent = JSON.parse(content)
+          setBriefingData(parsedContent)
+        }
+      } catch (e) {
+        setBriefingData({ rawContent: content })
+      }
+    }
   }
 
   const handleSendMessage = async (content: string, attachments?: File[]) => {
@@ -472,7 +487,24 @@ export function ChatInterface() {
                 )}
               </div>
 
-              <ChatInput onSend={handleSendMessage} />
+              {/* Adicionar o botão de criar campanha */}
+              {briefingContent && (
+                <div className="flex justify-center mt-4 mb-2">
+                  <CreateCampaignButton
+                    agentId={agentId as string}
+                    sessionId={sessionId as string}
+                    briefingData={briefingData || { rawContent: briefingContent }}
+                  />
+                </div>
+              )}
+              
+              <div className="sticky bottom-0 bg-[#0A0A0B]">
+                <ChatInput
+                  onSendMessage={handleSendMessage}
+                  isLoading={isSending}
+                  showAttachments
+                />
+              </div>
             </div>
           </motion.div>
         </div>

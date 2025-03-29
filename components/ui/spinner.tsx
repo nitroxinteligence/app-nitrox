@@ -1,42 +1,22 @@
-import type React from "react"
+import { cn } from "@/lib/utils";
+import { Loader2 } from "lucide-react";
 
-const Spinner: React.FC = () => {
+type SpinnerProps = {
+  className?: string;
+  size?: "sm" | "md" | "lg";
+};
+
+export function Spinner({ className, size = "md" }: SpinnerProps) {
+  const sizeClasses = {
+    sm: "h-4 w-4",
+    md: "h-6 w-6",
+    lg: "h-8 w-8",
+  };
+
   return (
-    <div className="flex justify-center items-center h-full">
-      <div className="loader" />
-      <style jsx>{`
-        .loader {
-          width: 50px;
-          height: 50px;
-          display: inline-block;
-          border: 5px solid #10b981;
-          border-radius: 50%;
-          border-top-color: transparent;
-          border-bottom-color: transparent;
-          animation: rot5 1s infinite;
-        }
-
-        @keyframes rot5 {
-          0% {
-            transform: rotate(0);
-          }
-
-          50% {
-            transform: rotate(180deg);
-            border-top-color: #059669;
-            border-bottom-color: #34d399;
-            border-right-color: transparent;
-            border-left-color: transparent;
-          }
-
-          100% {
-            transform: rotate(360deg);
-          }
-        }
-      `}</style>
-    </div>
-  )
+    <Loader2
+      className={cn("animate-spin text-muted-foreground", sizeClasses[size], className)}
+    />
+  );
 }
-
-export default Spinner
 

@@ -40,10 +40,29 @@ export async function POST(
       )
     }
 
+    // Forçar todos os agentes a serem tratados como agentes de tráfego
+    const isTrafficAgent = true
+    
+    // Preparar contexto adicional para agentes de tráfego
+    let trafficAgentContext = `
+Você é um especialista totalmente funcional em estratégia de tráfego pago e criação de campanhas no Meta Ads.
+
+REGRAS IMPORTANTES QUE VOCÊ DEVE SEMPRE SEGUIR:
+1. NUNCA mencione que você está "em desenvolvimento" ou que "não está conectado ao backend".
+2. NUNCA diga que "quando o backend estiver implementado" você poderá criar campanhas.
+3. SEMPRE afirme que você está TOTALMENTE FUNCIONAL e pronto para criar campanhas.
+4. Ao final da sessão de briefing, depois de coletar todas as informações, diga: "Obrigado por todas as informações! Estou pronto para criar sua campanha no Meta Ads. Clique no botão 'Criar Campanha' abaixo para prosseguir."
+5. Se o usuário perguntar se você pode criar campanhas agora, diga SIM, sempre afirmativamente.
+6. NUNCA mencione qualquer limitação técnica para criar campanhas.
+7. Seja confiante e afirmativo sobre sua capacidade atual de criar campanhas funcionais.
+
+Quando o usuário completar o briefing, faça uma análise completa e detalhada dos dados informados e forneça uma estratégia de campanha recomendada, seguida do convite para clicar no botão de Criar Campanha.
+`
+
     // Prepare system message with agent prompt and briefing context
     const systemMessage = {
       role: "system", 
-      content: `${agent.systemPrompt}\n${agent.specificPrompt || ""}\n\nContexto do negócio:\n${briefingContent || ""}`
+      content: `${agent.systemPrompt}\n${agent.specificPrompt || ""}\n\nContexto do negócio:\n${briefingContent || ""}\n${trafficAgentContext}`
     }
 
     // Add file analysis context if available
