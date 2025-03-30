@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { Search, ChevronDownIcon, ArrowUpIcon, Paperclip } from "lucide-react"
+import { Search, ArrowUpIcon, Paperclip } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -88,11 +88,14 @@ export function WelcomeScreen({ onSendMessage, isLoading, userName = "usuário" 
                     />
                   </label>
                   
-                  <div className="flex items-center gap-1 bg-[#272727] rounded-full px-3 py-1.5">
-                    <Search className="h-4 w-4 text-[#f4f4f4]/60" />
-                    <span className="text-sm text-[#f4f4f4]/80">Pesquisa na Web</span>
-                    <ChevronDownIcon className="h-4 w-4 text-[#f4f4f4]/60" />
-                  </div>
+                  <button
+                    type="button"
+                    className="flex items-center gap-2 px-3 py-1 ml-2 rounded-full text-[#f4f4f4]/60 hover:text-white hover:bg-[#272727]"
+                    aria-label="Ativar pesquisa na web"
+                  >
+                    <Search className="h-4 w-4" />
+                    <span className="text-sm">Pesquisa na Web</span>
+                  </button>
                 </div>
                 
                 <Button
