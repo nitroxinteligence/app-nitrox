@@ -16,7 +16,6 @@ export function WelcomeScreen({ onSendMessage, isLoading, userName = "usuário" 
   const [message, setMessage] = useState("")
   const [timeOfDay, setTimeOfDay] = useState("")
   const [attachments, setAttachments] = useState<File[]>([])
-  const [selectedMode, setSelectedMode] = useState<string | null>(null)
   
   // Determinar o horário do dia para saudação
   useEffect(() => {
@@ -42,68 +41,6 @@ export function WelcomeScreen({ onSendMessage, isLoading, userName = "usuário" 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setAttachments(Array.from(e.target.files))
-    }
-  }
-  
-  const clearSelectedMode = () => {
-    // Preservar texto existente que o usuário possa ter adicionado
-    if (selectedMode) {
-      const modePrefixes: Record<string, string> = {
-        "latest-news": "Preciso das últimas notícias sobre ",
-        "companion": "Quero conversar sobre ",
-        "unhinged": "Me responda de forma descontraída sobre ",
-        "loyal-friend": "Como um amigo, me ajude com ",
-        "homework": "Preciso de ajuda com a tarefa sobre ",
-        "not-doctor": "Tenho uma dúvida não-médica sobre ",
-        "not-therapist": "Quero conversar (não como terapia) sobre "
-      }
-      
-      const prefix = modePrefixes[selectedMode]
-      if (prefix && message.startsWith(prefix)) {
-        setMessage(message.substring(prefix.length))
-      }
-    }
-    
-    setSelectedMode(null)
-  }
-  
-  const assistantModes = [
-    { id: "latest-news", name: "Últimas Notícias", icon: "📰" },
-    { id: "companion", name: "Companheiro", icon: "❤️" },
-    { id: "unhinged", name: "Descontraído", icon: "😜" },
-    { id: "loyal-friend", name: "Amigo Fiel", icon: "👋" },
-    { id: "homework", name: "Ajuda com Tarefas", icon: "📝" },
-    { id: "not-doctor", name: "Não é um Médico", icon: "🩺" },
-    { id: "not-therapist", name: "Não é um Terapeuta", icon: "🧠" },
-  ]
-  
-  const setMode = (modeId: string) => {
-    // Se já estiver selecionado, desmarcar
-    if (selectedMode === modeId) {
-      clearSelectedMode()
-      return
-    }
-    
-    // Se outro modo estava selecionado, limpar primeiro
-    if (selectedMode) {
-      clearSelectedMode()
-    }
-    
-    setSelectedMode(modeId)
-    
-    // Adicionar um prefixo baseado no modo selecionado
-    const modePrefixes: Record<string, string> = {
-      "latest-news": "Preciso das últimas notícias sobre ",
-      "companion": "Quero conversar sobre ",
-      "unhinged": "Me responda de forma descontraída sobre ",
-      "loyal-friend": "Como um amigo, me ajude com ",
-      "homework": "Preciso de ajuda com a tarefa sobre ",
-      "not-doctor": "Tenho uma dúvida não-médica sobre ",
-      "not-therapist": "Quero conversar (não como terapia) sobre "
-    }
-    
-    if (modePrefixes[modeId]) {
-      setMessage(modePrefixes[modeId] + message)
     }
   }
 
@@ -161,17 +98,6 @@ export function WelcomeScreen({ onSendMessage, isLoading, userName = "usuário" 
                     <LightbulbIcon className="h-4 w-4 text-[#f4f4f4]/60" />
                     <span className="text-sm text-[#f4f4f4]/80">Pensar</span>
                   </div>
-                  
-                  {selectedMode && (
-                    <button
-                      type="button"
-                      onClick={clearSelectedMode}
-                      className="flex items-center gap-1 bg-[#58E877]/20 text-[#58E877] rounded-full px-3 py-1.5"
-                    >
-                      <span className="text-sm">Limpar modo</span>
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  )}
                 </div>
                 
                 <Button
@@ -187,31 +113,6 @@ export function WelcomeScreen({ onSendMessage, isLoading, userName = "usuário" 
               </div>
             </div>
           </form>
-        </div>
-        
-        <div className="mt-10 w-full">
-          <div className="flex flex-wrap justify-center gap-2 mb-4">
-            {assistantModes.map((mode) => (
-              <Button
-                key={mode.id}
-                onClick={() => setMode(mode.id)}
-                className={cn(
-                  "rounded-full px-4 py-2 bg-[#272727] hover:bg-[#3a3a3c]",
-                  selectedMode === mode.id ? "bg-[#58E877]/20 border border-[#58E877] text-[#58E877]" : "text-[#f4f4f4]"
-                )}
-              >
-                <span className="mr-2">{mode.icon}</span>
-                <span>{mode.name}</span>
-              </Button>
-            ))}
-          </div>
-          
-          <Button 
-            variant="link" 
-            className="text-[#f4f4f4]/60 hover:text-[#f4f4f4] text-sm"
-          >
-            Alternar para Sugestões
-          </Button>
         </div>
       </motion.div>
     </div>
