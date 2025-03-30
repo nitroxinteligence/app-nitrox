@@ -13,15 +13,13 @@ interface WelcomeScreenProps {
   isLoading: boolean
   userName?: string
   agentId?: string
-  onWebSearchChange?: (enabled: boolean) => void
 }
 
 export function WelcomeScreen({ 
   onSendMessage, 
   isLoading, 
   userName = "usuário",
-  agentId = "default",
-  onWebSearchChange
+  agentId = "default" 
 }: WelcomeScreenProps) {
   const [message, setMessage] = useState("")
   const [timeOfDay, setTimeOfDay] = useState("")
@@ -45,6 +43,9 @@ export function WelcomeScreen({
     e.preventDefault()
     if (!message.trim() && !attachments.length) return
     
+    // Armazenar o estado de pesquisa na web no localStorage para persistir entre componentes
+    localStorage.setItem('webSearchEnabled', isWebSearchActive.toString());
+    
     await onSendMessage(message, attachments.length > 0 ? attachments : undefined)
     setMessage("")
     setAttachments([])
@@ -59,11 +60,8 @@ export function WelcomeScreen({
   const toggleWebSearch = () => {
     const newState = !isWebSearchActive;
     setIsWebSearchActive(newState);
-    
-    // Notificar o componente pai sobre a mudança
-    if (onWebSearchChange) {
-      onWebSearchChange(newState);
-    }
+    // Armazenar no localStorage para persistir entre componentes
+    localStorage.setItem('webSearchEnabled', newState.toString());
     
     toast({
       title: newState ? "Pesquisa na Web ativada" : "Pesquisa na Web desativada",
@@ -74,6 +72,14 @@ export function WelcomeScreen({
     });
   }
 
+  // Carregar a configuração de pesquisa na web do localStorage ao iniciar
+  useEffect(() => {
+    const savedWebSearchSetting = localStorage.getItem('webSearchEnabled');
+    if (savedWebSearchSetting !== null) {
+      setIsWebSearchActive(savedWebSearchSetting === 'true');
+    }
+  }, []);
+
   // Atualizar ariaLabel para acessibilidade
   const webSearchAriaLabel = isWebSearchActive 
     ? "Desativar pesquisa na web" 
@@ -81,27 +87,26 @@ export function WelcomeScreen({
 
   return (
     <div className="flex flex-col items-center justify-center w-full h-full">
+      <div className="absolute top-4 right-4">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setIsHistoryOpen(true)}
+          className="flex items-center gap-1.5 text-[#f4f4f4] hover:text-white hover:bg-[#272727]"
+          aria-label="Abrir histórico de chats"
+        >
+          <History className="h-4 w-4" />
+          <span>Histórico</span>
+        </Button>
+      </div>
+
       <motion.div 
         className="w-full max-w-2xl flex flex-col items-center text-center"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="flex items-center justify-between w-full mb-8">
-          <h1 className="text-3xl font-bold text-white">{timeOfDay}, {userName}.</h1>
-          
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsHistoryOpen(true)}
-            className="flex items-center gap-1.5 text-[#f4f4f4] hover:text-white hover:bg-[#272727]"
-            aria-label="Abrir histórico de chats"
-          >
-            <History className="h-4 w-4" />
-            <span>Histórico</span>
-          </Button>
-        </div>
-        
+        <h1 className="text-3xl font-bold text-white mb-3">{timeOfDay}, {userName}.</h1>
         <p className="text-xl text-[#f4f4f4]/80 mb-12">Como posso ajudar você hoje?</p>
         
         <div className="w-full">

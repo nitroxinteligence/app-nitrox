@@ -716,6 +716,14 @@ export function ChatInterface() {
     return "disabled";
   };
 
+  // Carregar a configuração de pesquisa na web do localStorage
+  useEffect(() => {
+    const savedWebSearchSetting = localStorage.getItem('webSearchEnabled');
+    if (savedWebSearchSetting !== null) {
+      setIsWebSearchEnabled(savedWebSearchSetting === 'true');
+    }
+  }, []);
+
   return (
     <div className="fixed inset-0 bg-[#0A0A0B] flex items-center justify-center">
       <div className="w-full h-screen max-w-[1300px] mx-auto px-4 ml-32 mr-10 flex">
@@ -734,7 +742,6 @@ export function ChatInterface() {
                   onSendMessage={handleSendMessage}
                   isLoading={isLoading}
                   userName="Mateus"
-                  onWebSearchChange={setIsWebSearchEnabled}
                 />
               </div>
             ) : (
