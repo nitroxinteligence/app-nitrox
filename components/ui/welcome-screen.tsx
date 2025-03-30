@@ -5,24 +5,27 @@ import { motion } from "framer-motion"
 import { Search, ArrowUpIcon, Paperclip, History } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { ChatHistoryPopup } from "@/components/chat/chat-history-popup"
+import { toast } from "@/components/ui/use-toast"
 
 interface WelcomeScreenProps {
   onSendMessage: (content: string, attachments?: File[]) => Promise<void>
   isLoading: boolean
   userName?: string
-  onOpenHistory?: () => void
+  agentId?: string
 }
 
 export function WelcomeScreen({ 
   onSendMessage, 
   isLoading, 
   userName = "usuário",
-  onOpenHistory 
+  agentId = "default" 
 }: WelcomeScreenProps) {
   const [message, setMessage] = useState("")
   const [timeOfDay, setTimeOfDay] = useState("")
   const [attachments, setAttachments] = useState<File[]>([])
   const [isWebSearchActive, setIsWebSearchActive] = useState(false)
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   
   // Determinar o horário do dia para saudação
   useEffect(() => {
@@ -52,7 +55,15 @@ export function WelcomeScreen({
   }
 
   const toggleWebSearch = () => {
-    setIsWebSearchActive(!isWebSearchActive)
+    const newState = !isWebSearchActive;
+    setIsWebSearchActive(newState);
+    toast({
+      title: newState ? "Pesquisa na Web ativada" : "Pesquisa na Web desativada",
+      description: newState 
+        ? "Suas próximas mensagens serão processadas com pesquisa na web" 
+        : "As mensagens não serão mais processadas com pesquisa na web",
+      variant: "default",
+    });
   }
 
   // Atualizar ariaLabel para acessibilidade
@@ -62,19 +73,19 @@ export function WelcomeScreen({
 
   return (
     <div className="flex flex-col items-center justify-center w-full h-full">
-      <div className="w-full flex justify-end px-6">
+      <div className="absolute top-4 left-0 right-0 flex justify-center">
         <Button
           variant="ghost"
           size="sm"
-          onClick={onOpenHistory}
-          className="flex items-center gap-1.5 text-[#f4f4f4] hover:text-white hover:bg-[#272727] mb-6"
+          onClick={() => setIsHistoryOpen(true)}
+          className="flex items-center gap-1.5 text-[#f4f4f4] hover:text-white hover:bg-[#272727]"
           aria-label="Abrir histórico de chats"
         >
           <History className="h-4 w-4" />
           <span>Histórico</span>
         </Button>
       </div>
-      
+
       <motion.div 
         className="w-full max-w-2xl flex flex-col items-center text-center"
         initial={{ opacity: 0, y: 20 }}
@@ -147,6 +158,14 @@ export function WelcomeScreen({
           </form>
         </div>
       </motion.div>
+
+      <ChatHistoryPopup
+        agentId={agentId}
+        currentSessionId=""
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        onCreateNew={() => {}}
+      />
     </div>
   )
 } 

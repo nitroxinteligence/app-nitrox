@@ -12,7 +12,6 @@ interface NoMessagesProps {
     description: string
   }
   userName?: string
-  onOpenHistory?: () => void
 }
 
 export function NoMessages({ 
@@ -20,8 +19,7 @@ export function NoMessages({
   isLoading, 
   agentInfo, 
   briefingData,
-  userName,
-  onOpenHistory
+  userName 
 }: NoMessagesProps) {
   return (
     <div className="flex w-full h-full flex-col items-center justify-center">
@@ -29,7 +27,7 @@ export function NoMessages({
         onSendMessage={onSendMessage}
         isLoading={isLoading}
         userName={userName}
-        onOpenHistory={onOpenHistory}
+        agentId={agentInfo?.id}
       />
     </div>
   )
