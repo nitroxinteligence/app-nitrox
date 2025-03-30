@@ -61,48 +61,9 @@ export function ChatHeader({ title, agentId, sessionId, webSearchStatus = "disab
   }
 
   return (
-    <div className="flex items-center justify-between px-4 py-2 border-b border-[#272727]">
-      <div className="flex items-center gap-4">
-        <h2 className="text-lg font-semibold text-white">{title}</h2>
-        <BriefingButton onClick={() => setIsBriefingOpen(true)} />
-        
-        {webSearchStatus !== "disabled" && (
-          <div className="flex items-center gap-1.5 bg-[#272727] px-2.5 py-1 rounded-full">
-            {webSearchStatus === "searching" ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 text-[#58E877] animate-spin" />
-                <span className="text-xs text-[#f4f4f4]">Pesquisando...</span>
-              </>
-            ) : (
-              <>
-                <Globe className="h-3.5 w-3.5 text-[#58E877]" />
-                <span className="text-xs text-[#f4f4f4]">Web ativa</span>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-      
-      <div className="flex items-center gap-2">
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsHistoryOpen(true)}
-                className="flex items-center gap-1.5 text-white hover:bg-[#272727]"
-                aria-label="Abrir histórico de chats"
-              >
-                <History className="h-4 w-4" />
-                <span>Histórico</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              <p className="text-xs">Ver histórico de chats</p>
-            </TooltipContent>
-          </Tooltip>
-          
+    <TooltipProvider>
+      <div className="absolute top-0 left-0 right-0 flex justify-end p-4">
+        <div className="flex items-center gap-4">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -119,23 +80,17 @@ export function ChatHeader({ title, agentId, sessionId, webSearchStatus = "disab
               <p className="text-xs">Novo chat</p>
             </TooltipContent>
           </Tooltip>
-        </TooltipProvider>
+        </div>
+        
+        <ChatHistoryPopup
+          agentId={agentId}
+          currentSessionId={sessionId}
+          isOpen={isHistoryOpen}
+          onClose={() => setIsHistoryOpen(false)}
+          onCreateNew={createNewChat}
+        />
       </div>
-      
-      <BriefingDialog
-        isOpen={isBriefingOpen}
-        onClose={() => setIsBriefingOpen(false)}
-        agentId={agentId}
-      />
-      
-      <ChatHistoryPopup
-        agentId={agentId}
-        currentSessionId={sessionId}
-        isOpen={isHistoryOpen}
-        onClose={() => setIsHistoryOpen(false)}
-        onCreateNew={createNewChat}
-      />
-    </div>
+    </TooltipProvider>
   )
 }
 

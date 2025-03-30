@@ -51,9 +51,19 @@ export function ChatInput({
   const [isInternalLoading, setIsInternalLoading] = useState(false)
   const [attachments, setAttachments] = useState<FilePreview[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   
   const isLoading = externalLoading || isInternalLoading;
+
+  // Autoajustar a altura do textarea com base no conteúdo
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      const newHeight = Math.min(textarea.scrollHeight, 150);
+      textarea.style.height = `${newHeight}px`;
+    }
+  }, [message]);
 
   // Cleanup previews on unmount
   useEffect(() => {
@@ -104,7 +114,7 @@ export function ChatInput({
     }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSubmit(e as any)
@@ -222,12 +232,15 @@ export function ChatInput({
         </div>
       )}
       
-      <div className="rounded-xl bg-[#1c1c1c] p-4">
+      <div className="rounded-xl bg-[#1c1c1c] p-3">
         <textarea
+          ref={textareaRef}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
+          onKeyDown={handleKeyDown}
           placeholder="O que você deseja saber?"
-          className="w-full bg-transparent border-none text-white resize-none outline-none placeholder:text-[#f4f4f4]/40 min-h-[60px]"
+          className="w-full bg-transparent border-none text-white resize-none outline-none placeholder:text-[#f4f4f4]/40 min-h-[24px] max-h-[150px] overflow-y-auto"
+          rows={1}
         />
         
         <div className="flex items-center justify-between mt-2">

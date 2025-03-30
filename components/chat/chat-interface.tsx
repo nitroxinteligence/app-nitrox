@@ -17,6 +17,7 @@ import { processFiles } from "@/lib/file-processor"
 import { analyzeDocument, analyzeImage } from "@/lib/groq"
 import { BriefingService } from "@/lib/briefing-service"
 import { NoMessages } from "@/components/ui/no-messages"
+import { ChevronDown } from "lucide-react"
 
 export function ChatInterface() {
   const { messages, isLoading: isContextLoading, error, fetchMessages } = useChatContext()
@@ -29,6 +30,7 @@ export function ChatInterface() {
   const [isSearchingWeb, setIsSearchingWeb] = useState(false)
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false)
   const [isWebSearching, setIsWebSearching] = useState(false)
+  const [showScrollButton, setShowScrollButton] = useState(false)
   const params = useParams()
   const router = useRouter()
   const agentId = params?.agentId as string
@@ -724,8 +726,33 @@ export function ChatInterface() {
     }
   }, []);
 
+  // Detectar quando mostrar o botão de rolagem
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!messagesEndRef.current) return;
+      
+      const container = document.querySelector('.messages-container');
+      if (container) {
+        // Mostrar botão quando usuário rolar para cima (200px do fim)
+        const isScrolledUp = container.scrollHeight - container.scrollTop - container.clientHeight > 200;
+        setShowScrollButton(isScrolledUp);
+      }
+    };
+
+    const container = document.querySelector('.messages-container');
+    if (container) {
+      container.addEventListener('scroll', handleScroll);
+      return () => container.removeEventListener('scroll', handleScroll);
+    }
+  }, [messagesEndRef, chatMessages]);
+
+  // Função para rolar para o final do chat
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
   return (
-    <div className="fixed inset-0 bg-[#121212] flex flex-col items-center">
+    <div className="fixed inset-0 bg-[#0A0A0B] flex flex-col items-center">
       <ChatHeader
         title={agent.name}
         agentId={agentId}
@@ -745,7 +772,7 @@ export function ChatInterface() {
           </div>
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent px-4 pb-4">
+            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent px-4 pb-4 messages-container">
               {error ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-red-500 text-center">
@@ -776,7 +803,7 @@ export function ChatInterface() {
               )}
             </div>
 
-            <div className="sticky bottom-0 px-4 pb-8 pt-2 bg-gradient-to-t from-[#121212] via-[#121212] to-transparent">
+            <div className="sticky bottom-0 px-4 pb-8 pt-2 bg-gradient-to-t from-[#0A0A0B] via-[#0A0A0B] to-transparent">
               <ChatInput
                 onSendMessage={handleSendMessage}
                 isLoading={isLoading}
@@ -786,6 +813,17 @@ export function ChatInterface() {
                 onCancel={handleCancelRequest}
               />
             </div>
+
+            {/* Botão para rolar para baixo */}
+            {showScrollButton && (
+              <button
+                onClick={scrollToBottom}
+                className="fixed bottom-20 right-6 p-3 rounded-full bg-[#1c1c1c] text-white shadow-lg hover:bg-[#272727] transition-opacity z-50"
+                aria-label="Rolar para baixo"
+              >
+                <ChevronDown className="h-5 w-5" />
+              </button>
+            )}
           </>
         )}
       </div>
