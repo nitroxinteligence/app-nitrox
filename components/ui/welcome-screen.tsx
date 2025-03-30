@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { Search, ArrowUpIcon, Paperclip } from "lucide-react"
+import { Search, ArrowUpIcon, Paperclip, History } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -10,12 +10,19 @@ interface WelcomeScreenProps {
   onSendMessage: (content: string, attachments?: File[]) => Promise<void>
   isLoading: boolean
   userName?: string
+  onOpenHistory?: () => void
 }
 
-export function WelcomeScreen({ onSendMessage, isLoading, userName = "usuário" }: WelcomeScreenProps) {
+export function WelcomeScreen({ 
+  onSendMessage, 
+  isLoading, 
+  userName = "usuário",
+  onOpenHistory 
+}: WelcomeScreenProps) {
   const [message, setMessage] = useState("")
   const [timeOfDay, setTimeOfDay] = useState("")
   const [attachments, setAttachments] = useState<File[]>([])
+  const [isWebSearchActive, setIsWebSearchActive] = useState(false)
   
   // Determinar o horário do dia para saudação
   useEffect(() => {
@@ -44,8 +51,30 @@ export function WelcomeScreen({ onSendMessage, isLoading, userName = "usuário" 
     }
   }
 
+  const toggleWebSearch = () => {
+    setIsWebSearchActive(!isWebSearchActive)
+  }
+
+  // Atualizar ariaLabel para acessibilidade
+  const webSearchAriaLabel = isWebSearchActive 
+    ? "Desativar pesquisa na web" 
+    : "Ativar pesquisa na web";
+
   return (
     <div className="flex flex-col items-center justify-center w-full h-full">
+      <div className="w-full flex justify-end px-6">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onOpenHistory}
+          className="flex items-center gap-1.5 text-[#f4f4f4] hover:text-white hover:bg-[#272727] mb-6"
+          aria-label="Abrir histórico de chats"
+        >
+          <History className="h-4 w-4" />
+          <span>Histórico</span>
+        </Button>
+      </div>
+      
       <motion.div 
         className="w-full max-w-2xl flex flex-col items-center text-center"
         initial={{ opacity: 0, y: 20 }}
@@ -90,8 +119,13 @@ export function WelcomeScreen({ onSendMessage, isLoading, userName = "usuário" 
                   
                   <button
                     type="button"
-                    className="flex items-center gap-2 px-3 py-1 ml-2 rounded-full text-[#f4f4f4]/60 hover:text-white hover:bg-[#272727]"
-                    aria-label="Ativar pesquisa na web"
+                    onClick={toggleWebSearch}
+                    className={`flex items-center gap-2 px-3 py-1 ml-2 rounded-full ${
+                      isWebSearchActive ? 
+                      "bg-[#57E676]/20 text-[#57E676] hover:bg-[#57E676]/30" : 
+                      "text-[#f4f4f4]/60 hover:text-white hover:bg-[#272727]"
+                    }`}
+                    aria-label={webSearchAriaLabel}
                   >
                     <Search className="h-4 w-4" />
                     <span className="text-sm">Pesquisa na Web</span>

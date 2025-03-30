@@ -29,6 +29,7 @@ export function ChatInterface() {
   const [isSearchingWeb, setIsSearchingWeb] = useState(false)
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false)
   const [isWebSearching, setIsWebSearching] = useState(false)
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const params = useParams()
   const router = useRouter()
   const agentId = params?.agentId as string
@@ -718,7 +719,7 @@ export function ChatInterface() {
 
   return (
     <div className="fixed inset-0 bg-[#0A0A0B] flex items-center justify-center">
-      <div className="w-full h-screen max-w-[1100px] mx-auto px-4 ml-32 mr-10 flex">
+      <div className="w-full h-screen max-w-[1300px] mx-auto px-4 ml-32 mr-10 flex">
         <div className="flex w-full py-4">
           <motion.div
             className="w-full h-full min-w-0"
@@ -734,6 +735,7 @@ export function ChatInterface() {
                   onSendMessage={handleSendMessage}
                   isLoading={isLoading}
                   userName="Mateus"
+                  onOpenHistory={() => setIsHistoryOpen(true)}
                 />
               </div>
             ) : (
