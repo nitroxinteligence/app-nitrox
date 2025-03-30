@@ -12,12 +12,7 @@ import Image from "next/image"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ReactNode } from "react"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 
 // Definição de tipos para os componentes de markdown
 type MarkdownComponentProps = {
@@ -28,9 +23,9 @@ type MarkdownComponentProps = {
 // Definindo os componentes de renderização personalizada para o Markdown
 const markdownComponents = {
   p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
-  h1: ({ children }) => <h1 className="text-xl font-semibold mb-3">{children}</h1>,
-  h2: ({ children }) => <h2 className="text-lg font-semibold mb-3">{children}</h2>,
-  h3: ({ children }) => <h3 className="text-base font-semibold mb-2">{children}</h3>,
+  h1: ({ children }) => <h1 className="text-xl font-semibold mb-3 text-[#58E877]">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-lg font-semibold mb-3 text-[#58E877]">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-base font-semibold mb-2 text-[#58E877]">{children}</h3>,
   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
   em: ({ children }) => <em className="italic text-gray-300">{children}</em>,
   ul: ({ children }) => <ul className="mb-4 ml-5 space-y-1 list-disc marker:text-[#bfbfbf]">{children}</ul>,
@@ -38,12 +33,12 @@ const markdownComponents = {
   li: ({ children }) => <li className="mb-1">{children}</li>,
   hr: () => <hr className="my-4 border-[#333333]" />,
   a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+    <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#58E877] hover:underline">
       {children}
     </a>
   ),
   blockquote: ({ children }) => (
-    <blockquote className="pl-4 border-l-2 border-gray-600 italic text-gray-300 my-2">
+    <blockquote className="pl-4 border-l-2 border-[#58E877] italic text-gray-300 my-2">
       {children}
     </blockquote>
   ),
@@ -240,229 +235,208 @@ export function ChatMessages({ messages, isLoading, onRegenerate, onEdit, onFeed
   }
 
   return (
-    <div className="flex flex-col space-y-6">
-      <AnimatePresence>
-        {messages.map((message, index) => (
+    <div className="space-y-6">
+      <AnimatePresence mode="wait">
+        {messages.map((message, i) => (
           <motion.div
-            key={message.id || index}
+            key={message.id || `msg-${i}`}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
             className={cn(
-              "group",
-              message.role === "user" ? "flex justify-end" : "flex justify-start"
+              "group relative",
+              message.role === "user" ? "text-right" : "text-left"
             )}
           >
-            {message.role === "user" ? (
-              <div className="flex justify-end relative">
-                {message.id && editingMessageId === message.id ? (
-                  <div className="bg-[#1c1c1c] rounded-lg p-3">
-                    <textarea
-                      value={editContent}
-                      onChange={(e) => setEditContent(e.target.value)}
-                      className="w-full bg-[#1c1c1c] text-white rounded-lg p-2 min-h-[44px] resize-none border border-[#2a2a2a] focus:outline-none focus:ring-1 focus:ring-gray-600"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault()
-                          handleEditSubmit(message.id!)
-                        } else if (e.key === "Escape") {
-                          handleCancelEdit()
-                        }
-                      }}
-                      autoFocus
-                    />
-                    <div className="flex justify-end gap-2 mt-2">
-                      <button
-                        onClick={handleCancelEdit}
-                        className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-[#272727] text-red-500"
-                        type="button"
-                      >
-                        <X className="h-3 w-3" />
-                        Cancelar
-                      </button>
-                      <button
-                        onClick={() => handleEditSubmit(message.id!)}
-                        className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-[#272727] text-blue-400"
-                        disabled={!editContent.trim()}
-                        type="button"
-                      >
-                        <Check className="h-3 w-3" />
-                        Enviar
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="max-w-[80%] text-white p-2 pb-6 relative">
-                    <p className="whitespace-pre-wrap break-words">{message.content}</p>
-                    {message.attachments && message.attachments.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {message.attachments.map((file, index) => (
-                          <FileAttachment key={index} file={file} />
-                        ))}
-                      </div>
-                    )}
-                    <div className="absolute right-1 bottom-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              onClick={() => message.id && handleEdit(message.id, message.content)}
-                              className="p-1 hover:text-blue-400 transition-colors"
-                              type="button"
-                              disabled={!!editingMessageId}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Editar mensagem</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                      
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              onClick={() => handleCopy(message.content)}
-                              className="p-1 hover:text-blue-400 transition-colors"
-                              type="button"
-                            >
-                              <Copy className="h-4 w-4" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Copiar mensagem</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="relative max-w-[80%]">
-                <div className="text-white p-2 pb-6">
-                  <div className="prose prose-invert max-w-none prose-p:my-2 prose-headings:mb-2 prose-headings:mt-3">
-                    <ReactMarkdown 
-                      components={markdownComponents} 
-                      remarkPlugins={[remarkGfm]}
+            <div
+              className={cn(
+                "inline-block p-4 rounded-xl max-w-[85%] text-left",
+                message.role === "user"
+                  ? "bg-[#1E1E1E] text-white"
+                  : "bg-[#16161A] text-white"
+              )}
+            >
+              {editingMessageId === message.id ? (
+                <div className="space-y-3">
+                  <textarea
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    className="w-full p-2 text-white bg-[#272727] border border-[#373737] rounded-md focus:outline-none focus:ring-1 focus:ring-[#58E877]"
+                    rows={3}
+                    autoFocus
+                  />
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => handleEditSubmit(message.id!)}
+                      className="flex items-center gap-1 px-3 py-1 text-xs rounded-full bg-[#58E877] text-black hover:bg-[#4EDB82] transition-colors"
                     >
-                      {message.content}
-                    </ReactMarkdown>
+                      <Check className="w-3 h-3" />
+                      Salvar
+                    </button>
+                    <button
+                      onClick={handleCancelEdit}
+                      className="flex items-center gap-1 px-3 py-1 text-xs rounded-full bg-[#272727] text-white hover:bg-[#373737] transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                      Cancelar
+                    </button>
                   </div>
-                  {message.attachments && message.attachments.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-2">
+                </div>
+              ) : (
+                <>
+                  {message.role === "user" && message.attachments && message.attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-3">
                       {message.attachments.map((file, index) => (
                         <FileAttachment key={index} file={file} />
                       ))}
                     </div>
                   )}
-                  <div className={cn(
-                    "absolute left-1 bottom-0 transition-opacity flex gap-1",
-                    feedbackStates.get(message.id!) || "opacity-0 group-hover:opacity-100"
-                  )}>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            onClick={() => message.id && onRegenerate?.(message.id)}
-                            className="p-1 hover:text-blue-400 transition-colors"
-                            type="button"
-                          >
-                            <RotateCcw className="h-4 w-4" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Regenerar resposta</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                    
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            onClick={() => handleCopy(message.content)}
-                            className="p-1 hover:text-blue-400 transition-colors"
-                            type="button"
-                          >
-                            <Copy className="h-4 w-4" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Copiar mensagem</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                    
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            onClick={() => message.id && handleFeedback(message.id, true)}
-                            className={cn(
-                              "p-1 transition-colors relative",
-                              feedbackStates.get(message.id!) === "like" 
-                                ? "text-blue-400 bg-blue-400/10" 
-                                : "text-white hover:text-blue-400 hover:bg-blue-400/5",
-                              isSubmittingFeedback === message.id && "opacity-50 cursor-not-allowed"
-                            )}
-                            disabled={isSubmittingFeedback === message.id}
-                            type="button"
-                          >
-                            <ThumbsUp className="h-4 w-4" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Bom resultado</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                    
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            onClick={() => message.id && handleFeedback(message.id, false)}
-                            className={cn(
-                              "p-1 transition-colors relative",
-                              feedbackStates.get(message.id!) === "dislike" 
-                                ? "text-red-500 bg-red-500/10" 
-                                : "text-white hover:text-red-500 hover:bg-red-500/5",
-                              isSubmittingFeedback === message.id && "opacity-50 cursor-not-allowed"
-                            )}
-                            disabled={isSubmittingFeedback === message.id}
-                            type="button"
-                          >
-                            <ThumbsDown className="h-4 w-4" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Resultado ruim</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                  
+                  <div className="prose prose-invert max-w-none">
+                    {message.role === "user" ? (
+                      <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                    ) : (
+                      <ReactMarkdown
+                        components={markdownComponents}
+                        remarkPlugins={[remarkGfm]}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                    )}
                   </div>
-                </div>
+                </>
+              )}
+            </div>
+            
+            {/* Botões de ação para mensagens do usuário */}
+            {message.role === "user" && message.id && editingMessageId !== message.id && (
+              <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => handleEdit(message.id!, message.content)}
+                        className="p-1 text-white bg-[#272727] rounded-full hover:bg-[#373737] transition-colors"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-[#1E1E1E] border-[#272727] text-white">
+                      Editar mensagem
+                    </TooltipContent>
+                  </Tooltip>
+
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => handleCopy(message.content)}
+                        className="p-1 text-white bg-[#272727] rounded-full hover:bg-[#373737] transition-colors"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-[#1E1E1E] border-[#272727] text-white">
+                      Copiar mensagem
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            )}
+            
+            {/* Botões de ação para mensagens do assistente */}
+            {message.role === "assistant" && message.id && editingMessageId !== message.id && (
+              <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => onRegenerate && onRegenerate(message.id!)}
+                        disabled={isLoading}
+                        className="p-1 text-white bg-[#272727] rounded-full hover:bg-[#373737] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-[#1E1E1E] border-[#272727] text-white">
+                      Regenerar resposta
+                    </TooltipContent>
+                  </Tooltip>
+
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => handleCopy(message.content)}
+                        className="p-1 text-white bg-[#272727] rounded-full hover:bg-[#373737] transition-colors"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-[#1E1E1E] border-[#272727] text-white">
+                      Copiar mensagem
+                    </TooltipContent>
+                  </Tooltip>
+
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => onFeedback && handleFeedback(message.id!, true)}
+                        disabled={isSubmittingFeedback === message.id || feedbackStates.get(message.id!) === "like"}
+                        className={cn(
+                          "p-1 rounded-full transition-colors",
+                          feedbackStates.get(message.id!) === "like"
+                            ? "bg-[#58E877]/20 text-[#58E877]"
+                            : "text-white bg-[#272727] hover:bg-[#373737]",
+                          (isSubmittingFeedback === message.id || isLoading) && "opacity-50 cursor-not-allowed"
+                        )}
+                      >
+                        <ThumbsUp className="w-3.5 h-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-[#1E1E1E] border-[#272727] text-white">
+                      Gostei da resposta
+                    </TooltipContent>
+                  </Tooltip>
+
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => onFeedback && handleFeedback(message.id!, false)}
+                        disabled={isSubmittingFeedback === message.id || feedbackStates.get(message.id!) === "dislike"}
+                        className={cn(
+                          "p-1 rounded-full transition-colors",
+                          feedbackStates.get(message.id!) === "dislike"
+                            ? "bg-red-500/20 text-red-500"
+                            : "text-white bg-[#272727] hover:bg-[#373737]",
+                          (isSubmittingFeedback === message.id || isLoading) && "opacity-50 cursor-not-allowed"
+                        )}
+                      >
+                        <ThumbsDown className="w-3.5 h-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-[#1E1E1E] border-[#272727] text-white">
+                      Não gostei da resposta
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             )}
           </motion.div>
         ))}
+        
+        {isLoading && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+            className="relative text-left"
+          >
+            <div className="inline-block p-4 bg-[#16161A] text-white rounded-xl max-w-[85%]">
+              <TextShimmer className="w-full h-20" />
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
-      {isLoading && !isSubmittingFeedback && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <div className="text-sm text-gray-400">
-            <TextShimmer className="text-sm text-gray-400" duration={1.5}>
-              Pensando...
-            </TextShimmer>
-          </div>
-        </motion.div>
-      )}
       <div ref={messagesEndRef} />
     </div>
   )

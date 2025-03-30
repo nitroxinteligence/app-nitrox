@@ -17,6 +17,10 @@ import { processFiles } from "@/lib/file-processor"
 import { analyzeDocument, analyzeImage } from "@/lib/groq"
 import { BriefingService } from "@/lib/briefing-service"
 import { NoMessages } from "@/components/ui/no-messages"
+import { History, PlusCircle } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
+import { ChatHistoryPopup } from "@/components/chat/chat-history-popup"
 
 export function ChatInterface() {
   const { messages, isLoading: isContextLoading, error, fetchMessages } = useChatContext()
@@ -29,6 +33,7 @@ export function ChatInterface() {
   const [isSearchingWeb, setIsSearchingWeb] = useState(false)
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false)
   const [isWebSearching, setIsWebSearching] = useState(false)
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const params = useParams()
   const router = useRouter()
   const agentId = params?.agentId as string
@@ -110,6 +115,38 @@ export function ChatInterface() {
         description: "A geração da resposta foi interrompida",
         variant: "default",
       });
+    }
+  }
+
+  const createNewChat = async () => {
+    try {
+      const timestamp = new Date().getTime()
+      const newSessionId = `${agentId}_${timestamp}`
+
+      // Criar nova sessão
+      const { data, error } = await supabase
+        .from("chat_sessions")
+        .insert([{
+          id: newSessionId,
+          agent_id: agentId,
+          title: "Novo Chat",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }])
+        .select()
+        .single()
+
+      if (error) throw error
+
+      router.push(`/chat/${agentId}/${data.id}`)
+      setIsHistoryOpen(false)
+    } catch (error) {
+      console.error("Error creating new chat:", error)
+      toast({
+        title: "Erro",
+        description: "Não foi possível criar um novo chat. Por favor, tente novamente.",
+        variant: "destructive",
+      })
     }
   }
 
@@ -688,6 +725,14 @@ export function ChatInterface() {
     }
   }
 
+  // Carregar a configuração de pesquisa na web do localStorage
+  useEffect(() => {
+    const savedWebSearchSetting = localStorage.getItem('webSearchEnabled');
+    if (savedWebSearchSetting !== null) {
+      setIsWebSearchEnabled(savedWebSearchSetting === 'true');
+    }
+  }, []);
+
   const agent = AGENTS[agentId]
 
   if (!agent) {
@@ -716,89 +761,142 @@ export function ChatInterface() {
     return "disabled";
   };
 
-  // Carregar a configuração de pesquisa na web do localStorage
-  useEffect(() => {
-    const savedWebSearchSetting = localStorage.getItem('webSearchEnabled');
-    if (savedWebSearchSetting !== null) {
-      setIsWebSearchEnabled(savedWebSearchSetting === 'true');
-    }
-  }, []);
-
   return (
-    <div className="fixed inset-0 bg-[#141414] flex items-center justify-center">
-      <div className="w-full h-screen max-w-[800px] mx-auto flex flex-col">
-        <div className="flex flex-1 w-full py-4 overflow-hidden">
-          <motion.div
-            className="w-full h-full min-w-0 flex flex-col"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            {chatMessages.length === 0 ? (
-              <div className="h-full overflow-hidden">
-                <NoMessages 
-                  agentInfo={agent} 
-                  briefingData={briefingData} 
-                  onSendMessage={handleSendMessage}
-                  isLoading={isLoading}
-                  userName="Mateus"
-                />
-              </div>
-            ) : (
-              <>
-                <ChatHeader
-                  title={agent.name}
-                  agentId={agentId}
-                  sessionId={sessionId}
-                  webSearchStatus={getWebSearchStatus()}
-                />
-
-                <div className="flex-1 overflow-y-auto px-4">
-                  {error ? (
-                    <div className="flex items-center justify-center h-full">
-                      <div className="text-red-500 text-center">
-                        <p>{error}</p>
-                        <button
-                          onClick={() => fetchMessages()}
-                          className="mt-2 text-sm text-blue-400 hover:underline"
-                        >
-                          Tentar novamente
-                        </button>
-                      </div>
-                    </div>
-                  ) : isTransitioning ? (
-                    <div className="flex items-center justify-center h-full">
-                      <MessageLoading />
-                    </div>
-                  ) : (
-                    <div className="py-4">
-                      <ChatMessages
-                        messages={chatMessages}
-                        isLoading={isLoading}
-                        onRegenerate={handleRegenerate}
-                        onEdit={handleEdit}
-                        onFeedback={handleFeedback}
-                      />
-                      <div ref={messagesEndRef} />
-                    </div>
-                  )}
-                </div>
-
-                <div className="sticky bottom-0 bg-[#141414]">
-                  <ChatInput
+    <TooltipProvider>
+      <div className="fixed inset-0 bg-[#0A0A0B] flex items-center justify-center">
+        <div className="w-full h-screen max-w-[1300px] mx-auto px-4 flex">
+          <div className="flex w-full py-4">
+            <motion.div
+              className="w-full h-full min-w-0"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              {chatMessages.length === 0 ? (
+                <div className="h-full overflow-hidden rounded-[15px]">
+                  <NoMessages 
+                    agentInfo={agent} 
+                    briefingData={briefingData} 
                     onSendMessage={handleSendMessage}
                     isLoading={isLoading}
-                    showAttachments
-                    onSearchWeb={toggleWebSearch}
-                    isWebSearchActive={isWebSearchEnabled}
-                    onCancel={handleCancelRequest}
+                    userName="Mateus"
                   />
                 </div>
-              </>
-            )}
-          </motion.div>
+              ) : (
+                <div className="h-full overflow-hidden flex flex-col rounded-[15px] border border-[#272727]">
+                  <div className="flex items-center justify-between px-4 py-2 border-b border-[#272727]">
+                    <div className="flex items-center gap-4">
+                      <h2 className="text-lg font-semibold text-white">{agent.name}</h2>
+                      {getWebSearchStatus() !== "disabled" && (
+                        <div className="flex items-center gap-1.5 bg-[#272727] px-2.5 py-1 rounded-full">
+                          {getWebSearchStatus() === "searching" ? (
+                            <>
+                              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#58E877] border-t-transparent"></div>
+                              <span className="text-xs text-[#f4f4f4]">Pesquisando...</span>
+                            </>
+                          ) : (
+                            <>
+                              <div className="h-3.5 w-3.5 rounded-full bg-[#58E877]"></div>
+                              <span className="text-xs text-[#f4f4f4]">Web ativa</span>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setIsHistoryOpen(true)}
+                            className="flex items-center gap-1.5 text-[#f4f4f4] hover:text-white hover:bg-[#272727]"
+                            aria-label="Abrir histórico de chats"
+                          >
+                            <History className="h-4 w-4" />
+                            <span>Histórico</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent className="bg-[#1E1E1E] border-[#272727] text-white">
+                          Abrir histórico de chats
+                        </TooltipContent>
+                      </Tooltip>
+
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={createNewChat}
+                            className="p-1 rounded-full hover:bg-[#272727] text-[#58E877]"
+                            aria-label="Iniciar novo chat"
+                          >
+                            <PlusCircle className="h-5 w-5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent className="bg-[#1E1E1E] border-[#272727] text-white">
+                          Iniciar novo chat
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto">
+                    {error ? (
+                      <div className="flex items-center justify-center h-full">
+                        <div className="text-red-500 text-center">
+                          <p>{error}</p>
+                          <button
+                            onClick={() => fetchMessages()}
+                            className="mt-2 text-sm text-[#58E877] hover:text-[#4EDB82]"
+                          >
+                            Tentar novamente
+                          </button>
+                        </div>
+                      </div>
+                    ) : isTransitioning ? (
+                      <div className="flex items-center justify-center h-full">
+                        <MessageLoading />
+                      </div>
+                    ) : (
+                      <div className="p-4">
+                        <ChatMessages
+                          messages={chatMessages}
+                          isLoading={isLoading}
+                          onRegenerate={handleRegenerate}
+                          onEdit={handleEdit}
+                          onFeedback={handleFeedback}
+                        />
+                        <div ref={messagesEndRef} />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="sticky bottom-0 bg-[#0A0A0B] border-t border-[#272727]">
+                    <ChatInput
+                      onSendMessage={handleSendMessage}
+                      isLoading={isLoading}
+                      showAttachments
+                      onSearchWeb={toggleWebSearch}
+                      isWebSearchActive={isWebSearchEnabled}
+                      onCancel={handleCancelRequest}
+                    />
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
         </div>
       </div>
-    </div>
+
+      <ChatHistoryPopup
+        agentId={agentId}
+        currentSessionId={sessionId}
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        onCreateNew={createNewChat}
+      />
+    </TooltipProvider>
   )
 } 
