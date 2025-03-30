@@ -62,14 +62,6 @@ export function ChatInterface() {
     if (agentId && sessionId) {
       loadMessages()
     }
-    
-    // Verificar o localStorage para ativar pesquisa na web
-    const webSearchFromWelcomeScreen = localStorage.getItem('webSearchEnabled');
-    if (webSearchFromWelcomeScreen === 'true') {
-      setIsWebSearchEnabled(true);
-      // Limpar o localStorage após carregar
-      localStorage.removeItem('webSearchEnabled');
-    }
   }, [agentId, sessionId, fetchMessages])
 
   useEffect(() => {
@@ -735,13 +727,14 @@ export function ChatInterface() {
             transition={{ duration: 0.3 }}
           >
             {chatMessages.length === 0 ? (
-              <div className="h-full overflow-hidden rounded-[15px] border border-[#272727]">
+              <div className="h-full overflow-hidden rounded-[15px]">
                 <NoMessages 
                   agentInfo={agent} 
                   briefingData={briefingData} 
                   onSendMessage={handleSendMessage}
                   isLoading={isLoading}
                   userName="Mateus"
+                  onWebSearchChange={setIsWebSearchEnabled}
                 />
               </div>
             ) : (

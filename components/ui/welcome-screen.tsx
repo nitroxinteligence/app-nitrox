@@ -13,13 +13,15 @@ interface WelcomeScreenProps {
   isLoading: boolean
   userName?: string
   agentId?: string
+  onWebSearchChange?: (enabled: boolean) => void
 }
 
 export function WelcomeScreen({ 
   onSendMessage, 
   isLoading, 
   userName = "usuário",
-  agentId = "default" 
+  agentId = "default",
+  onWebSearchChange
 }: WelcomeScreenProps) {
   const [message, setMessage] = useState("")
   const [timeOfDay, setTimeOfDay] = useState("")
@@ -43,16 +45,7 @@ export function WelcomeScreen({
     e.preventDefault()
     if (!message.trim() && !attachments.length) return
     
-    // Armazenar o estado atual da pesquisa na web em uma variável
-    // para que seja usado mesmo se o estado for atualizado durante o processamento
-    const webSearchActive = isWebSearchActive;
-    
-    // Incluir informação de webSearch no localStorage para o ChatInterface acessar
-    if (webSearchActive) {
-      localStorage.setItem('webSearchEnabled', 'true');
-    }
-    
-    await onSendMessage(message, attachments.length > 0 ? attachments : undefined);
+    await onSendMessage(message, attachments.length > 0 ? attachments : undefined)
     setMessage("")
     setAttachments([])
   }
@@ -66,6 +59,12 @@ export function WelcomeScreen({
   const toggleWebSearch = () => {
     const newState = !isWebSearchActive;
     setIsWebSearchActive(newState);
+    
+    // Notificar o componente pai sobre a mudança
+    if (onWebSearchChange) {
+      onWebSearchChange(newState);
+    }
+    
     toast({
       title: newState ? "Pesquisa na Web ativada" : "Pesquisa na Web desativada",
       description: newState 
@@ -88,7 +87,21 @@ export function WelcomeScreen({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <h1 className="text-3xl font-bold text-white mb-3">{timeOfDay}, {userName}.</h1>
+        <div className="flex items-center justify-between w-full mb-8">
+          <h1 className="text-3xl font-bold text-white">{timeOfDay}, {userName}.</h1>
+          
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsHistoryOpen(true)}
+            className="flex items-center gap-1.5 text-[#f4f4f4] hover:text-white hover:bg-[#272727]"
+            aria-label="Abrir histórico de chats"
+          >
+            <History className="h-4 w-4" />
+            <span>Histórico</span>
+          </Button>
+        </div>
+        
         <p className="text-xl text-[#f4f4f4]/80 mb-12">Como posso ajudar você hoje?</p>
         
         <div className="w-full">
@@ -137,17 +150,6 @@ export function WelcomeScreen({
                     <Search className="h-4 w-4" />
                     <span className="text-sm">Pesquisa na Web</span>
                   </button>
-                  
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setIsHistoryOpen(true)}
-                    className="flex items-center gap-1.5 text-[#f4f4f4]/60 hover:text-white hover:bg-[#272727] ml-2"
-                    aria-label="Abrir histórico de chats"
-                  >
-                    <History className="h-4 w-4" />
-                    <span className="text-sm">Histórico</span>
-                  </Button>
                 </div>
                 
                 <Button
