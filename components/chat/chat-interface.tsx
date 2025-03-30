@@ -17,8 +17,6 @@ import { processFiles } from "@/lib/file-processor"
 import { analyzeDocument, analyzeImage } from "@/lib/groq"
 import { BriefingService } from "@/lib/briefing-service"
 import { NoMessages } from "@/components/ui/no-messages"
-import { ChatHistoryPopup } from "@/components/chat/chat-history-popup"
-import { History } from "lucide-react"
 
 export function ChatInterface() {
   const { messages, isLoading: isContextLoading, error, fetchMessages } = useChatContext()
@@ -37,7 +35,6 @@ export function ChatInterface() {
   const sessionId = params?.sessionId as string
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
 
   useEffect(() => {
     if (messages && messages.length > 0) {
@@ -728,64 +725,17 @@ export function ChatInterface() {
   }, []);
 
   return (
-    <div className="fixed inset-0 bg-black flex items-center justify-center">
-      <div className="absolute top-4 right-4 flex items-center gap-2">
-        <button 
-          className="text-white p-2 rounded-full hover:bg-[#272727]" 
-          aria-label="Menu"
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M3 6H21" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-            <path d="M3 12H21" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-            <path d="M3 18H21" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-          </svg>
-        </button>
-        <button 
-          className="text-white p-2 rounded-full hover:bg-[#272727]" 
-          aria-label="Download"
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 4V16M12 16L7 11M12 16L17 11" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            <path d="M20 20H4" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-          </svg>
-        </button>
-        <div className="w-6 h-6 rounded-full bg-white overflow-hidden">
-          <img src="/placeholder-avatar.png" alt="Profile" className="w-full h-full object-cover" />
-        </div>
-      </div>
-      
-      <div className="absolute top-20 right-4">
-        <button 
-          className="flex items-center justify-center w-8 h-8 rounded-full bg-[#666666] text-white text-xs"
-          aria-label="AI"
-        >
-          ai
-        </button>
-      </div>
-      
-      <div className="absolute top-32 right-4">
-        <button
-          onClick={() => setIsHistoryOpen(true)}
-          className="bg-[#272727] text-white px-3 py-1 rounded"
-          aria-label="Abrir histórico de chats"
-        >
-          <span className="flex items-center gap-1">
-            <History className="h-4 w-4" />
-            <span>Histórico</span>
-          </span>
-        </button>
-      </div>
-
-      <div className="w-full h-screen max-w-[1300px] mx-auto px-4 flex">
-        <div className="flex w-full py-4">
+    <div className="fixed inset-0 bg-[#0A0A0B] flex items-center justify-center">
+      <div className="w-full h-screen mx-auto flex flex-col">
+        <div className="flex flex-col w-full h-full">
           <motion.div
-            className="w-full h-full min-w-0"
+            className="w-full h-full flex flex-col"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3 }}
           >
             {chatMessages.length === 0 ? (
-              <div className="h-full overflow-hidden rounded-[15px]">
+              <div className="h-full overflow-hidden">
                 <NoMessages 
                   agentInfo={agent} 
                   briefingData={briefingData} 
@@ -795,8 +745,15 @@ export function ChatInterface() {
                 />
               </div>
             ) : (
-              <div className="h-full overflow-hidden flex flex-col rounded-[15px]">
-                <div className="flex-1 overflow-y-auto">
+              <div className="h-full overflow-hidden flex flex-col">
+                <ChatHeader
+                  title={agent.name}
+                  agentId={agentId}
+                  sessionId={sessionId}
+                  webSearchStatus={getWebSearchStatus()}
+                />
+
+                <div className="flex-1 overflow-y-auto px-4 py-2">
                   {error ? (
                     <div className="flex items-center justify-center h-full">
                       <div className="text-red-500 text-center">
@@ -814,7 +771,7 @@ export function ChatInterface() {
                       <MessageLoading />
                     </div>
                   ) : (
-                    <div className="p-4">
+                    <div className="py-4 max-w-[800px] mx-auto">
                       <ChatMessages
                         messages={chatMessages}
                         isLoading={isLoading}
@@ -827,8 +784,8 @@ export function ChatInterface() {
                   )}
                 </div>
 
-                <div className="sticky bottom-0 flex justify-center w-full pb-4">
-                  <div className="w-[90%] max-w-[800px]">
+                <div className="sticky bottom-0 bg-[#0A0A0B] py-4 border-t border-[#1c1c1c]">
+                  <div className="max-w-[800px] mx-auto px-4">
                     <ChatInput
                       onSendMessage={handleSendMessage}
                       isLoading={isLoading}
@@ -844,14 +801,6 @@ export function ChatInterface() {
           </motion.div>
         </div>
       </div>
-      
-      <ChatHistoryPopup
-        agentId={agentId}
-        currentSessionId={sessionId}
-        isOpen={isHistoryOpen}
-        onClose={() => setIsHistoryOpen(false)}
-        onCreateNew={() => {}}
-      />
     </div>
   )
 } 
