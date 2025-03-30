@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { Search, LightbulbIcon, ChevronDownIcon, ArrowUpIcon, Paperclip, X } from "lucide-react"
+import { Search, ChevronDownIcon, ArrowUpIcon, Paperclip } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -57,7 +57,7 @@ export function WelcomeScreen({ onSendMessage, isLoading, userName = "usuário" 
         
         <div className="w-full">
           <form onSubmit={handleSubmit} className="relative">
-            <div className="rounded-xl bg-[#1c1c1c] border border-[#272727] p-4">
+            <div className="rounded-xl bg-[#1c1c1c] p-4">
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
@@ -90,13 +90,8 @@ export function WelcomeScreen({ onSendMessage, isLoading, userName = "usuário" 
                   
                   <div className="flex items-center gap-1 bg-[#272727] rounded-full px-3 py-1.5">
                     <Search className="h-4 w-4 text-[#f4f4f4]/60" />
-                    <span className="text-sm text-[#f4f4f4]/80">Pesquisa</span>
+                    <span className="text-sm text-[#f4f4f4]/80">Pesquisa na Web</span>
                     <ChevronDownIcon className="h-4 w-4 text-[#f4f4f4]/60" />
-                  </div>
-                  
-                  <div className="flex items-center gap-1 bg-[#272727] rounded-full px-3 py-1.5">
-                    <LightbulbIcon className="h-4 w-4 text-[#f4f4f4]/60" />
-                    <span className="text-sm text-[#f4f4f4]/80">Pensar</span>
                   </div>
                 </div>
                 
