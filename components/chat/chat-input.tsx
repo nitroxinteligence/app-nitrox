@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Send, Paperclip, X, FileText, Image as ImageIcon, Search, Square, Mic, Lightbulb, ChevronUp } from "lucide-react"
+import { Send, Paperclip, X, FileText, Image as ImageIcon, Search, Square } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE } from "@/types/chat"
 import { cn } from "@/lib/utils"
@@ -189,93 +189,75 @@ export function ChatInput({
   };
 
   return (
-    <div className="bg-[#333333] rounded-lg shadow-lg">
+    <div className="w-full">
       {attachments.length > 0 && (
-        <div className="flex flex-wrap gap-2 p-2 bg-[#222222] rounded-t-lg">
+        <div className="flex flex-wrap gap-2 mb-2">
           {attachments.map((attachment, index) => (
             <div
               key={index}
-              className="relative group flex items-center gap-2 bg-[#444444] text-white text-xs px-3 py-2 rounded"
+              className="relative group flex items-center gap-2 bg-[#1c1c1c] text-white text-xs px-3 py-2 rounded"
             >
               {attachment.type === "image" ? (
-                <div className="relative w-6 h-6">
+                <div className="relative h-8 w-8 rounded overflow-hidden">
                   <Image
                     src={attachment.preview}
                     alt="Preview"
                     fill
-                    className="object-cover rounded"
+                    className="object-cover"
                   />
                 </div>
               ) : (
-                <FileText className="w-4 h-4 text-white" />
+                <FileText className="h-4 w-4 text-[#58E877]" />
               )}
-              <span className="truncate max-w-[100px]">{attachment.file.name}</span>
+              <span className="truncate max-w-[150px]">{attachment.file.name}</span>
               <button
-                type="button"
                 onClick={() => removeAttachment(index)}
-                className="ml-1 p-1 rounded-full hover:bg-[#555555] text-white"
+                className="absolute -top-1 -right-1 rounded-full bg-[#272727] p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                type="button"
               >
-                <X className="w-3 h-3" />
+                <X className="h-3 w-3" />
               </button>
             </div>
           ))}
         </div>
       )}
       
-      <div className="flex items-center p-2">
-        <input
-          ref={inputRef}
-          type="text"
+      <div className="rounded-xl bg-[#1c1c1c] p-4">
+        <textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="How can Grok help?"
-          className="flex-1 bg-transparent border-none text-white focus:ring-0 focus:outline-none disabled:opacity-50 placeholder:text-[#aaaaaa] text-sm"
-          disabled={isLoading}
-          autoComplete="off"
+          placeholder="O que você deseja saber?"
+          className="w-full bg-transparent border-none text-white resize-none outline-none placeholder:text-[#f4f4f4]/40 min-h-[60px]"
         />
         
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="text-white hover:bg-[#444444] rounded-full p-1"
-            aria-label="Microphone"
-          >
-            <Mic className="h-5 w-5" />
-          </Button>
-          
-          <button
-            type="button"
-            onClick={onSearchWeb}
-            className={`flex items-center gap-1 px-2 py-1 rounded text-xs ${
-              isWebSearchActive ? 
-              "bg-[#444444] text-white" : 
-              "text-white hover:bg-[#444444]"
-            }`}
-            aria-label={webSearchAriaLabel}
-          >
-            <Search className="h-3.5 w-3.5" />
-            <span>DeepSearch</span>
-          </button>
-          
-          <button
-            type="button"
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs text-white hover:bg-[#444444]"
-            aria-label="Think"
-          >
-            <Lightbulb className="h-3.5 w-3.5" />
-            <span>Think</span>
-          </button>
-          
-          <div className="flex items-center gap-1 px-2">
-            <span className="text-xs text-white">Grok 3</span>
-            <button 
+        <div className="flex items-center justify-between mt-2">
+          <div className="flex items-center gap-2">
+            {showAttachments && (
+              <label className="cursor-pointer p-2 rounded-full text-[#f4f4f4]/60 hover:text-white hover:bg-[#272727]">
+                <Paperclip className="h-5 w-5" />
+                <input 
+                  ref={fileInputRef}
+                  type="file" 
+                  className="hidden" 
+                  onChange={handleFileSelect} 
+                  multiple
+                  accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                />
+              </label>
+            )}
+            
+            <button
               type="button"
-              className="flex items-center justify-center w-6 h-6 rounded-full bg-[#666666] text-white hover:bg-[#777777]"
+              onClick={onSearchWeb}
+              className={`flex items-center gap-2 px-3 py-1 ml-2 rounded-full ${
+                isWebSearchActive ? 
+                "bg-[#57E676]/20 text-[#57E676] hover:bg-[#57E676]/30" : 
+                "text-[#f4f4f4]/60 hover:text-white hover:bg-[#272727]"
+              }`}
+              aria-label={webSearchAriaLabel}
             >
-              <ChevronUp className="h-3 w-3" />
+              <Search className="h-4 w-4" />
+              <span className="text-sm">Pesquisa na Web</span>
             </button>
           </div>
           
@@ -285,21 +267,21 @@ export function ChatInput({
               variant="ghost"
               size="icon"
               onClick={handleCancel}
-              className="rounded-full p-1 hover:bg-[#444444] text-red-500"
+              className="rounded-full p-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-500"
+              aria-label="Cancelar geração"
             >
               <Square className="h-5 w-5" />
             </Button>
           ) : (
             <Button
+              type="submit"
               onClick={handleSubmit}
-              type="button"
-              variant="ghost"
-              size="icon"
               disabled={(!message.trim() && attachments.length === 0)}
               className={cn(
-                "rounded-full p-1 hover:bg-[#444444] disabled:opacity-50",
-                (!message.trim() && attachments.length === 0) ? "text-[#aaaaaa]" : "text-white"
+                "rounded-full p-2.5 bg-[#58E877] hover:bg-[#4EDB82] disabled:opacity-50",
+                (!message.trim() && attachments.length === 0) ? "text-[#1a1a1c]/60" : "text-[#1a1a1c]"
               )}
+              aria-label="Enviar mensagem"
             >
               <Send className="h-5 w-5" />
             </Button>

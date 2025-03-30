@@ -12,7 +12,7 @@ import Image from "next/image"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ReactNode } from "react"
-import { 
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -240,67 +240,67 @@ export function ChatMessages({ messages, isLoading, onRegenerate, onEdit, onFeed
   }
 
   return (
-    <div className="space-y-6">
-      <AnimatePresence initial={false} mode="sync">
-        {messages.map((message) => (
-          <motion.div
-            key={message.id || message.created_at}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.2 }}
-            className="group relative"
-          >
-            {message.role === "user" ? (
-              <div className="relative flex justify-end">
-                {message.id && editingMessageId === message.id ? (
-                  <div className="w-1/2 bg-[#1c1c1c] rounded-lg p-3">
-                    <textarea
-                      value={editContent}
-                      onChange={(e) => setEditContent(e.target.value)}
-                      className="w-full bg-[#1c1c1c] text-white rounded-lg p-2 min-h-[44px] resize-none border border-[#272727] focus:outline-none focus:border-[#58E877]"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault()
-                          handleEditSubmit(message.id!)
-                        } else if (e.key === "Escape") {
-                          handleCancelEdit()
-                        }
-                      }}
-                      autoFocus
-                    />
-                    <div className="flex justify-end gap-2 mt-2">
-                      <button
-                        onClick={handleCancelEdit}
-                        className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-[#272727] text-red-500"
-                        type="button"
-                      >
-                        <X className="h-3 w-3" />
-                        Cancelar
-                      </button>
-                      <button
-                        onClick={() => handleEditSubmit(message.id!)}
-                        className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-[#272727] text-[#58E877]"
-                        disabled={!editContent.trim()}
-                        type="button"
-                      >
-                        <Check className="h-3 w-3" />
-                        Enviar
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="w-1/2 text-[#E8F3ED] bg-[#1c1c1c] rounded-lg p-3 pb-10">
-                    <p className="whitespace-pre-wrap break-words">{message.content}</p>
-                    {message.attachments && message.attachments.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {message.attachments.map((file, index) => (
-                          <FileAttachment key={index} file={file} />
-                        ))}
+    <TooltipProvider>
+      <div className="space-y-6">
+        <AnimatePresence initial={false} mode="sync">
+          {messages.map((message) => (
+            <motion.div
+              key={message.id || message.created_at}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.2 }}
+              className="group relative"
+            >
+              {message.role === "user" ? (
+                <div className="relative flex justify-end mb-6">
+                  {message.id && editingMessageId === message.id ? (
+                    <div className="w-full max-w-2xl bg-[#1c1c1c] rounded-lg p-3">
+                      <textarea
+                        value={editContent}
+                        onChange={(e) => setEditContent(e.target.value)}
+                        className="w-full bg-[#1c1c1c] text-white rounded-lg p-2 min-h-[44px] resize-none border border-[#272727] focus:outline-none focus:border-[#58E877]"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault()
+                            handleEditSubmit(message.id!)
+                          } else if (e.key === "Escape") {
+                            handleCancelEdit()
+                          }
+                        }}
+                        autoFocus
+                      />
+                      <div className="flex justify-end gap-2 mt-2">
+                        <button
+                          onClick={handleCancelEdit}
+                          className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-[#272727] text-red-500"
+                          type="button"
+                        >
+                          <X className="h-3 w-3" />
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={() => handleEditSubmit(message.id!)}
+                          className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-[#272727] text-[#58E877]"
+                          disabled={!editContent.trim()}
+                          type="button"
+                        >
+                          <Check className="h-3 w-3" />
+                          Enviar
+                        </button>
                       </div>
-                    )}
-                    <div className="absolute right-3 bottom-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                      <TooltipProvider>
+                    </div>
+                  ) : (
+                    <div className="w-full max-w-2xl text-[#E8F3ED] bg-transparent rounded-lg p-3 pb-10 relative">
+                      <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                      {message.attachments && message.attachments.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {message.attachments.map((file, index) => (
+                            <FileAttachment key={index} file={file} />
+                          ))}
+                        </div>
+                      )}
+                      <div className="absolute right-3 bottom-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <button
@@ -312,13 +312,11 @@ export function ChatMessages({ messages, isLoading, onRegenerate, onEdit, onFeed
                               <Pencil className="h-4 w-4" />
                             </button>
                           </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Editar mensagem</p>
+                          <TooltipContent side="bottom">
+                            <p className="text-xs">Editar mensagem</p>
                           </TooltipContent>
                         </Tooltip>
-                      </TooltipProvider>
-
-                      <TooltipProvider>
+                        
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <button
@@ -329,38 +327,36 @@ export function ChatMessages({ messages, isLoading, onRegenerate, onEdit, onFeed
                               <Copy className="h-4 w-4" />
                             </button>
                           </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Copiar mensagem</p>
+                          <TooltipContent side="bottom">
+                            <p className="text-xs">Copiar texto</p>
                           </TooltipContent>
                         </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="relative">
-                <div className="text-white bg-[#1c1c1c] rounded-lg p-3 pb-10">
-                  <div className="prose prose-invert max-w-none prose-p:my-2 prose-headings:mb-2 prose-headings:mt-3">
-                    <ReactMarkdown 
-                      components={markdownComponents} 
-                      remarkPlugins={[remarkGfm]}
-                    >
-                      {message.content}
-                    </ReactMarkdown>
-                  </div>
-                  {message.attachments && message.attachments.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {message.attachments.map((file, index) => (
-                        <FileAttachment key={index} file={file} />
-                      ))}
+                      </div>
                     </div>
                   )}
-                  <div className={cn(
-                    "absolute left-3 bottom-2 transition-opacity flex gap-2",
-                    feedbackStates.get(message.id!) || "opacity-0 group-hover:opacity-100"
-                  )}>
-                    <TooltipProvider>
+                </div>
+              ) : (
+                <div className="relative mb-6">
+                  <div className="text-white bg-transparent rounded-lg p-3 pb-10">
+                    <div className="prose prose-invert max-w-none prose-p:my-2 prose-headings:mb-2 prose-headings:mt-3">
+                      <ReactMarkdown 
+                        components={markdownComponents} 
+                        remarkPlugins={[remarkGfm]}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                    </div>
+                    {message.attachments && message.attachments.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {message.attachments.map((file, index) => (
+                          <FileAttachment key={index} file={file} />
+                        ))}
+                      </div>
+                    )}
+                    <div className={cn(
+                      "absolute left-3 bottom-2 transition-opacity flex gap-2",
+                      feedbackStates.get(message.id!) || "opacity-0 group-hover:opacity-100"
+                    )}>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <button
@@ -371,13 +367,11 @@ export function ChatMessages({ messages, isLoading, onRegenerate, onEdit, onFeed
                             <RotateCcw className="h-4 w-4" />
                           </button>
                         </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Regenerar resposta</p>
+                        <TooltipContent side="bottom">
+                          <p className="text-xs">Regenerar resposta</p>
                         </TooltipContent>
                       </Tooltip>
-                    </TooltipProvider>
-
-                    <TooltipProvider>
+                      
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <button
@@ -388,13 +382,11 @@ export function ChatMessages({ messages, isLoading, onRegenerate, onEdit, onFeed
                             <Copy className="h-4 w-4" />
                           </button>
                         </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Copiar resposta</p>
+                        <TooltipContent side="bottom">
+                          <p className="text-xs">Copiar texto</p>
                         </TooltipContent>
                       </Tooltip>
-                    </TooltipProvider>
-
-                    <TooltipProvider>
+                      
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <button
@@ -412,13 +404,11 @@ export function ChatMessages({ messages, isLoading, onRegenerate, onEdit, onFeed
                             <ThumbsUp className="h-4 w-4" />
                           </button>
                         </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Gostei da resposta</p>
+                        <TooltipContent side="bottom">
+                          <p className="text-xs">Gostei da resposta</p>
                         </TooltipContent>
                       </Tooltip>
-                    </TooltipProvider>
-
-                    <TooltipProvider>
+                      
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <button
@@ -436,32 +426,32 @@ export function ChatMessages({ messages, isLoading, onRegenerate, onEdit, onFeed
                             <ThumbsDown className="h-4 w-4" />
                           </button>
                         </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Não gostei da resposta</p>
+                        <TooltipContent side="bottom">
+                          <p className="text-xs">Não gostei da resposta</p>
                         </TooltipContent>
                       </Tooltip>
-                    </TooltipProvider>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+            </motion.div>
+          ))}
+        </AnimatePresence>
+        {isLoading && !isSubmittingFeedback && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <div className="bg-transparent rounded-lg p-3">
+              <TextShimmer className="text-sm text-[#71717A]" duration={1.5}>
+                Pensando...
+              </TextShimmer>
+            </div>
           </motion.div>
-        ))}
-      </AnimatePresence>
-      {isLoading && !isSubmittingFeedback && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <div className="bg-[#1c1c1c] rounded-lg p-3">
-            <TextShimmer className="text-sm text-[#71717A]" duration={1.5}>
-              Pensando...
-            </TextShimmer>
-          </div>
-        </motion.div>
-      )}
-      <div ref={messagesEndRef} />
-    </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+    </TooltipProvider>
   )
 }
 

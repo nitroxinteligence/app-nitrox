@@ -3,13 +3,13 @@
 import { useState } from "react"
 import { BriefingDialog } from "@/components/briefing/briefing-dialog"
 import { BriefingButton } from "@/components/briefing/briefing-button"
-import { Globe, Loader2, History, PlusCircle } from "lucide-react"
+import { Globe, Search, Loader2, History, PlusCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ChatHistoryPopup } from "@/components/chat/chat-history-popup"
 import { useRouter } from "next/navigation"
 import { toast } from "@/components/ui/use-toast"
 import { supabase } from "@/lib/supabase-client"
-import { 
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -61,12 +61,13 @@ export function ChatHeader({ title, agentId, sessionId, webSearchStatus = "disab
   }
 
   return (
-    <div className="flex items-center justify-between px-4 py-2">
-      <div className="flex items-center gap-2">
+    <div className="flex items-center justify-between px-4 py-2 border-b border-[#272727]">
+      <div className="flex items-center gap-4">
         <h2 className="text-lg font-semibold text-white">{title}</h2>
+        <BriefingButton onClick={() => setIsBriefingOpen(true)} />
         
         {webSearchStatus !== "disabled" && (
-          <div className="flex items-center gap-1.5 bg-[#272727] px-2.5 py-1 rounded-full ml-2">
+          <div className="flex items-center gap-1.5 bg-[#272727] px-2.5 py-1 rounded-full">
             {webSearchStatus === "searching" ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 text-[#58E877] animate-spin" />
@@ -90,20 +91,18 @@ export function ChatHeader({ title, agentId, sessionId, webSearchStatus = "disab
                 variant="ghost"
                 size="sm"
                 onClick={() => setIsHistoryOpen(true)}
-                className="flex items-center gap-1.5 text-[#f4f4f4] hover:text-white hover:bg-[#272727]"
+                className="flex items-center gap-1.5 text-white hover:bg-[#272727]"
                 aria-label="Abrir histórico de chats"
               >
                 <History className="h-4 w-4" />
                 <span>Histórico</span>
               </Button>
             </TooltipTrigger>
-            <TooltipContent>
-              <p>Ver histórico de chats</p>
+            <TooltipContent side="bottom">
+              <p className="text-xs">Ver histórico de chats</p>
             </TooltipContent>
           </Tooltip>
-        </TooltipProvider>
-        
-        <TooltipProvider>
+          
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -116,8 +115,8 @@ export function ChatHeader({ title, agentId, sessionId, webSearchStatus = "disab
                 <PlusCircle className="h-5 w-5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>
-              <p>Criar novo chat</p>
+            <TooltipContent side="bottom">
+              <p className="text-xs">Novo chat</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

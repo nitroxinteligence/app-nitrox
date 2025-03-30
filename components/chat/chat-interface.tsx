@@ -725,81 +725,69 @@ export function ChatInterface() {
   }, []);
 
   return (
-    <div className="fixed inset-0 bg-[#0A0A0B] flex items-center justify-center">
-      <div className="w-full h-screen mx-auto flex flex-col">
-        <div className="flex flex-col w-full h-full">
-          <motion.div
-            className="w-full h-full flex flex-col"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            {chatMessages.length === 0 ? (
-              <div className="h-full overflow-hidden">
-                <NoMessages 
-                  agentInfo={agent} 
-                  briefingData={briefingData} 
-                  onSendMessage={handleSendMessage}
-                  isLoading={isLoading}
-                  userName="Mateus"
-                />
-              </div>
-            ) : (
-              <div className="h-full overflow-hidden flex flex-col">
-                <ChatHeader
-                  title={agent.name}
-                  agentId={agentId}
-                  sessionId={sessionId}
-                  webSearchStatus={getWebSearchStatus()}
-                />
-
-                <div className="flex-1 overflow-y-auto px-4 py-2">
-                  {error ? (
-                    <div className="flex items-center justify-center h-full">
-                      <div className="text-red-500 text-center">
-                        <p>{error}</p>
-                        <button
-                          onClick={() => fetchMessages()}
-                          className="mt-2 text-sm text-[#58E877] hover:text-[#4EDB82]"
-                        >
-                          Tentar novamente
-                        </button>
-                      </div>
-                    </div>
-                  ) : isTransitioning ? (
-                    <div className="flex items-center justify-center h-full">
-                      <MessageLoading />
-                    </div>
-                  ) : (
-                    <div className="py-4 max-w-[800px] mx-auto">
-                      <ChatMessages
-                        messages={chatMessages}
-                        isLoading={isLoading}
-                        onRegenerate={handleRegenerate}
-                        onEdit={handleEdit}
-                        onFeedback={handleFeedback}
-                      />
-                      <div ref={messagesEndRef} />
-                    </div>
-                  )}
-                </div>
-
-                <div className="sticky bottom-0 bg-[#0A0A0B] py-4 border-t border-[#1c1c1c]">
-                  <div className="max-w-[800px] mx-auto px-4">
-                    <ChatInput
-                      onSendMessage={handleSendMessage}
-                      isLoading={isLoading}
-                      showAttachments
-                      onSearchWeb={toggleWebSearch}
-                      isWebSearchActive={isWebSearchEnabled}
-                      onCancel={handleCancelRequest}
-                    />
+    <div className="fixed inset-0 bg-[#121212] flex flex-col items-center">
+      <ChatHeader
+        title={agent.name}
+        agentId={agentId}
+        sessionId={sessionId}
+      />
+      
+      <div className="w-full max-w-3xl mx-auto flex-1 overflow-hidden flex flex-col pt-16">
+        {chatMessages.length === 0 ? (
+          <div className="h-full overflow-hidden">
+            <NoMessages 
+              agentInfo={agent} 
+              briefingData={briefingData} 
+              onSendMessage={handleSendMessage}
+              isLoading={isLoading}
+              userName="Mateus"
+            />
+          </div>
+        ) : (
+          <>
+            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent px-4 pb-4">
+              {error ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-red-500 text-center">
+                    <p>{error}</p>
+                    <button
+                      onClick={() => fetchMessages()}
+                      className="mt-2 text-sm text-[#58E877] hover:text-[#4EDB82]"
+                    >
+                      Tentar novamente
+                    </button>
                   </div>
                 </div>
-              </div>
-            )}
-          </motion.div>
-        </div>
+              ) : isTransitioning ? (
+                <div className="flex items-center justify-center h-full">
+                  <MessageLoading />
+                </div>
+              ) : (
+                <div className="py-4">
+                  <ChatMessages
+                    messages={chatMessages}
+                    isLoading={isLoading}
+                    onRegenerate={handleRegenerate}
+                    onEdit={handleEdit}
+                    onFeedback={handleFeedback}
+                  />
+                  <div ref={messagesEndRef} />
+                </div>
+              )}
+            </div>
+
+            <div className="sticky bottom-0 px-4 pb-8 pt-2 bg-gradient-to-t from-[#121212] via-[#121212] to-transparent">
+              <ChatInput
+                onSendMessage={handleSendMessage}
+                isLoading={isLoading}
+                showAttachments
+                onSearchWeb={toggleWebSearch}
+                isWebSearchActive={isWebSearchEnabled}
+                onCancel={handleCancelRequest}
+              />
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
