@@ -726,7 +726,7 @@ export function ChatInterface() {
 
   return (
     <div className="fixed inset-0 bg-[#0A0A0B] flex items-center justify-center">
-      <div className="w-full h-screen max-w-[1300px] mx-auto px-4 ml-32 mr-10 flex">
+      <div className="w-full h-screen max-w-[1300px] mx-auto px-4 flex">
         <div className="flex w-full py-4">
           <motion.div
             className="w-full h-full min-w-0"
@@ -735,7 +735,7 @@ export function ChatInterface() {
             transition={{ duration: 0.3 }}
           >
             {chatMessages.length === 0 ? (
-              <div className="h-full overflow-hidden rounded-[15px]">
+              <div className="h-full overflow-hidden rounded-lg">
                 <NoMessages 
                   agentInfo={agent} 
                   briefingData={briefingData} 
@@ -745,7 +745,7 @@ export function ChatInterface() {
                 />
               </div>
             ) : (
-              <div className="h-full overflow-hidden flex flex-col rounded-[15px] border border-[#272727]">
+              <div className="h-full overflow-hidden flex flex-col rounded-lg">
                 <ChatHeader
                   title={agent.name}
                   agentId={agentId}
@@ -753,7 +753,7 @@ export function ChatInterface() {
                   webSearchStatus={getWebSearchStatus()}
                 />
 
-                <div className="flex-1 overflow-y-auto">
+                <div className="flex-1 overflow-y-auto bg-[#0A0A0B]">
                   {error ? (
                     <div className="flex items-center justify-center h-full">
                       <div className="text-red-500 text-center">
@@ -771,7 +771,7 @@ export function ChatInterface() {
                       <MessageLoading />
                     </div>
                   ) : (
-                    <div className="p-4">
+                    <div className="py-4">
                       <ChatMessages
                         messages={chatMessages}
                         isLoading={isLoading}
@@ -784,15 +784,17 @@ export function ChatInterface() {
                   )}
                 </div>
 
-                <div className="sticky bottom-0 bg-[#0A0A0B]">
-                  <ChatInput
-                    onSendMessage={handleSendMessage}
-                    isLoading={isLoading}
-                    showAttachments
-                    onSearchWeb={toggleWebSearch}
-                    isWebSearchActive={isWebSearchEnabled}
-                    onCancel={handleCancelRequest}
-                  />
+                <div className="py-2 px-4">
+                  <div className="rounded-xl bg-[#1c1c1c] p-4">
+                    <ChatInput
+                      onSendMessage={handleSendMessage}
+                      isLoading={isLoading}
+                      showAttachments
+                      onSearchWeb={toggleWebSearch}
+                      isWebSearchActive={isWebSearchEnabled}
+                      onCancel={handleCancelRequest}
+                    />
+                  </div>
                 </div>
               </div>
             )}
