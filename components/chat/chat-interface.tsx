@@ -29,7 +29,6 @@ export function ChatInterface() {
   const [isSearchingWeb, setIsSearchingWeb] = useState(false)
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false)
   const [isWebSearching, setIsWebSearching] = useState(false)
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const params = useParams()
   const router = useRouter()
   const agentId = params?.agentId as string
@@ -62,6 +61,14 @@ export function ChatInterface() {
 
     if (agentId && sessionId) {
       loadMessages()
+    }
+    
+    // Verificar o localStorage para ativar pesquisa na web
+    const webSearchFromWelcomeScreen = localStorage.getItem('webSearchEnabled');
+    if (webSearchFromWelcomeScreen === 'true') {
+      setIsWebSearchEnabled(true);
+      // Limpar o localStorage após carregar
+      localStorage.removeItem('webSearchEnabled');
     }
   }, [agentId, sessionId, fetchMessages])
 
@@ -735,7 +742,6 @@ export function ChatInterface() {
                   onSendMessage={handleSendMessage}
                   isLoading={isLoading}
                   userName="Mateus"
-                  onOpenHistory={() => setIsHistoryOpen(true)}
                 />
               </div>
             ) : (

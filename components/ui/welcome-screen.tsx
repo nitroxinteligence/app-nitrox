@@ -43,7 +43,16 @@ export function WelcomeScreen({
     e.preventDefault()
     if (!message.trim() && !attachments.length) return
     
-    await onSendMessage(message, attachments.length > 0 ? attachments : undefined)
+    // Armazenar o estado atual da pesquisa na web em uma variável
+    // para que seja usado mesmo se o estado for atualizado durante o processamento
+    const webSearchActive = isWebSearchActive;
+    
+    // Incluir informação de webSearch no localStorage para o ChatInterface acessar
+    if (webSearchActive) {
+      localStorage.setItem('webSearchEnabled', 'true');
+    }
+    
+    await onSendMessage(message, attachments.length > 0 ? attachments : undefined);
     setMessage("")
     setAttachments([])
   }
@@ -73,19 +82,6 @@ export function WelcomeScreen({
 
   return (
     <div className="flex flex-col items-center justify-center w-full h-full">
-      <div className="absolute top-4 left-0 right-0 flex justify-center">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setIsHistoryOpen(true)}
-          className="flex items-center gap-1.5 text-[#f4f4f4] hover:text-white hover:bg-[#272727]"
-          aria-label="Abrir histórico de chats"
-        >
-          <History className="h-4 w-4" />
-          <span>Histórico</span>
-        </Button>
-      </div>
-
       <motion.div 
         className="w-full max-w-2xl flex flex-col items-center text-center"
         initial={{ opacity: 0, y: 20 }}
@@ -141,6 +137,17 @@ export function WelcomeScreen({
                     <Search className="h-4 w-4" />
                     <span className="text-sm">Pesquisa na Web</span>
                   </button>
+                  
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsHistoryOpen(true)}
+                    className="flex items-center gap-1.5 text-[#f4f4f4]/60 hover:text-white hover:bg-[#272727] ml-2"
+                    aria-label="Abrir histórico de chats"
+                  >
+                    <History className="h-4 w-4" />
+                    <span className="text-sm">Histórico</span>
+                  </Button>
                 </div>
                 
                 <Button
