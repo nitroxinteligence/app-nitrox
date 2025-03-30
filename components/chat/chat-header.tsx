@@ -3,13 +3,13 @@
 import { useState } from "react"
 import { BriefingDialog } from "@/components/briefing/briefing-dialog"
 import { BriefingButton } from "@/components/briefing/briefing-button"
-import { Globe, Loader2, History, PlusCircle } from "lucide-react"
+import { Globe, Search, Loader2, History, PlusCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ChatHistoryPopup } from "@/components/chat/chat-history-popup"
 import { useRouter } from "next/navigation"
 import { toast } from "@/components/ui/use-toast"
 import { supabase } from "@/lib/supabase-client"
-import { 
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -61,80 +61,62 @@ export function ChatHeader({ title, agentId, sessionId, webSearchStatus = "disab
   }
 
   return (
-    <TooltipProvider>
-      <div className="flex items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-4">
-          <h2 className="text-xl font-semibold text-white">{title}</h2>
-          
-          {webSearchStatus !== "disabled" && (
-            <div className="flex items-center gap-1.5 bg-[#272727] px-2.5 py-1 rounded-full">
-              {webSearchStatus === "searching" ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 text-[#58E877] animate-spin" />
-                  <span className="text-xs text-[#f4f4f4]">Pesquisando...</span>
-                </>
-              ) : (
-                <>
-                  <Globe className="h-3.5 w-3.5 text-[#58E877]" />
-                  <span className="text-xs text-[#f4f4f4]">Web ativa</span>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-        
-        <div className="flex items-center gap-2">
+    <div className="flex items-center justify-end px-4 py-2">
+      <div className="flex items-center gap-2">
+        <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setIsHistoryOpen(true)}
-                className="flex items-center gap-1.5 text-white hover:bg-[#272727]"
+                className="flex items-center gap-1.5 text-white hover:text-white hover:bg-[#272727]"
                 aria-label="Abrir histórico de chats"
               >
-                <History className="h-5 w-5" />
+                <History className="h-4 w-4" />
                 <span>Histórico</span>
               </Button>
             </TooltipTrigger>
-            <TooltipContent className="bg-[#272727] text-white border-[#383838]">
-              Histórico de chats
+            <TooltipContent>
+              <p>Ver histórico de chats</p>
             </TooltipContent>
           </Tooltip>
-          
+        </TooltipProvider>
+        
+        <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={createNewChat}
-                className="p-2 rounded-full hover:bg-[#272727] text-white"
+                className="p-1 rounded-full hover:bg-[#272727] text-white"
                 aria-label="Criar novo chat"
               >
                 <PlusCircle className="h-5 w-5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent className="bg-[#272727] text-white border-[#383838]">
-              Novo chat
+            <TooltipContent>
+              <p>Criar novo chat</p>
             </TooltipContent>
           </Tooltip>
-        </div>
-        
-        <BriefingDialog
-          isOpen={isBriefingOpen}
-          onClose={() => setIsBriefingOpen(false)}
-          agentId={agentId}
-        />
-        
-        <ChatHistoryPopup
-          agentId={agentId}
-          currentSessionId={sessionId}
-          isOpen={isHistoryOpen}
-          onClose={() => setIsHistoryOpen(false)}
-          onCreateNew={createNewChat}
-        />
+        </TooltipProvider>
       </div>
-    </TooltipProvider>
+      
+      <BriefingDialog
+        isOpen={isBriefingOpen}
+        onClose={() => setIsBriefingOpen(false)}
+        agentId={agentId}
+      />
+      
+      <ChatHistoryPopup
+        agentId={agentId}
+        currentSessionId={sessionId}
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        onCreateNew={createNewChat}
+      />
+    </div>
   )
 }
 
