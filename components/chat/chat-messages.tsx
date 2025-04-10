@@ -19,36 +19,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 
-// Definição de tipos para os componentes de markdown
-type MarkdownComponentProps = {
-  children: ReactNode;
-  href?: string;
-}
-
-// Definindo os componentes de renderização personalizada para o Markdown
-const markdownComponents = {
-  p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
-  h1: ({ children }) => <h1 className="text-xl font-semibold mb-3 text-[#58E877]">{children}</h1>,
-  h2: ({ children }) => <h2 className="text-lg font-semibold mb-3 text-[#58E877]">{children}</h2>,
-  h3: ({ children }) => <h3 className="text-base font-semibold mb-2 text-[#58E877]">{children}</h3>,
-  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-  em: ({ children }) => <em className="italic text-gray-300">{children}</em>,
-  ul: ({ children }) => <ul className="mb-4 ml-5 space-y-1 list-disc marker:text-[#bfbfbf]">{children}</ul>,
-  ol: ({ children }) => <ol className="mb-4 ml-5 space-y-1 list-decimal marker:text-[#bfbfbf]">{children}</ol>,
-  li: ({ children }) => <li className="mb-1">{children}</li>,
-  hr: () => <hr className="my-4 border-[#333333]" />,
-  a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#58E877] hover:underline">
-      {children}
-    </a>
-  ),
-  blockquote: ({ children }) => (
-    <blockquote className="pl-4 border-l-2 border-[#58E877] italic text-gray-300 my-2">
-      {children}
-    </blockquote>
-  ),
-}
-
 interface ChatMessagesProps {
   messages: Message[]
   isLoading: boolean
@@ -241,7 +211,7 @@ export function ChatMessages({ messages, isLoading, onRegenerate, onEdit, onFeed
 
   return (
     <TooltipProvider>
-      <div className="space-y-6">
+      <div className="space-y-2">
         <AnimatePresence initial={false} mode="sync">
           {messages.map((message) => (
             <motion.div
@@ -253,13 +223,13 @@ export function ChatMessages({ messages, isLoading, onRegenerate, onEdit, onFeed
               className="group relative"
             >
               {message.role === "user" ? (
-                <div className="relative flex justify-end mb-6">
+                <div className="relative flex justify-end mb-2">
                   {message.id && editingMessageId === message.id ? (
-                    <div className="w-full max-w-2xl bg-[#1c1c1c] rounded-lg p-3">
+                    <div className="w-full max-w-2xl bg-[#1c1c1c] rounded-lg p-2">
                       <textarea
                         value={editContent}
                         onChange={(e) => setEditContent(e.target.value)}
-                        className="w-full bg-[#1c1c1c] text-white rounded-lg p-2 min-h-[44px] resize-none border border-[#272727] focus:outline-none focus:border-[#58E877]"
+                        className="w-full bg-[#1c1c1c] text-[#FAF8F6] rounded-lg p-2 min-h-[44px] resize-none border border-[#272727] focus:outline-none focus:border-[#58E877]"
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && !e.shiftKey) {
                             e.preventDefault()
@@ -291,16 +261,18 @@ export function ChatMessages({ messages, isLoading, onRegenerate, onEdit, onFeed
                       </div>
                     </div>
                   ) : (
-                    <div className="w-full max-w-2xl text-[#E8F3ED] bg-transparent rounded-lg p-3 pb-10 relative">
-                      <p className="whitespace-pre-wrap break-words">{message.content}</p>
-                      {message.attachments && message.attachments.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {message.attachments.map((file, index) => (
-                            <FileAttachment key={index} file={file} />
-                          ))}
-                        </div>
-                      )}
-                      <div className="absolute right-3 bottom-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+                    <div className="flex flex-col items-end">
+                      <div className="inline-block max-w-2xl text-[#FAF8F6] bg-[#1c1c1c] rounded-lg p-2">
+                        <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                        {message.attachments && message.attachments.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {message.attachments.map((file, index) => (
+                              <FileAttachment key={index} file={file} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-1 mr-1 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <button
@@ -336,25 +308,42 @@ export function ChatMessages({ messages, isLoading, onRegenerate, onEdit, onFeed
                   )}
                 </div>
               ) : (
-                <div className="relative mb-6">
-                  <div className="text-white bg-transparent rounded-lg p-3 pb-10">
-                    <div className="prose prose-invert max-w-none prose-p:my-2 prose-headings:mb-2 prose-headings:mt-3">
+                <div className="relative mb-2">
+                  <div className="text-[#E7E6E5] bg-transparent rounded-lg p-2 pb-12">
+                    <div className="prose prose-invert prose-compact max-w-none prose-p:my-1 prose-headings:mb-1 prose-headings:mt-2">
                       <ReactMarkdown 
-                        components={markdownComponents} 
                         remarkPlugins={[remarkGfm]}
+                        components={{
+                          p: ({node, ...props}) => <p className="mb-3 last:mb-0 text-[#E7E6E5]" {...props} />,
+                          h1: ({node, ...props}) => <h1 className="text-xl font-semibold mb-3 text-[#58E877]" {...props} />,
+                          h2: ({node, ...props}) => <h2 className="text-lg font-semibold mb-3 text-[#58E877]" {...props} />,
+                          h3: ({node, ...props}) => <h3 className="text-base font-semibold mb-2 text-[#58E877]" {...props} />,
+                          strong: ({node, ...props}) => <strong className="font-semibold" {...props} />,
+                          em: ({node, ...props}) => <em className="italic text-gray-300" {...props} />,
+                          ul: ({node, ...props}) => <ul className="mb-4 ml-5 space-y-1 list-disc marker:text-[#bfbfbf] text-[#E7E6E5]" {...props} />,
+                          ol: ({node, ...props}) => <ol className="mb-4 ml-5 space-y-1 list-decimal marker:text-[#bfbfbf] text-[#E7E6E5]" {...props} />,
+                          li: ({node, ...props}) => <li className="mb-1 text-[#E7E6E5]" {...props} />,
+                          hr: () => <hr className="my-4 border-[#333333]" />,
+                          a: ({node, href, ...props}) => (
+                            <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#58E877] hover:underline" {...props} />
+                          ),
+                          blockquote: ({node, ...props}) => (
+                            <blockquote className="pl-4 border-l-2 border-[#58E877] italic text-[#E7E6E5] my-2" {...props} />
+                          ),
+                        }}
                       >
                         {message.content}
                       </ReactMarkdown>
                     </div>
                     {message.attachments && message.attachments.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex flex-wrap gap-2 mt-1">
                         {message.attachments.map((file, index) => (
                           <FileAttachment key={index} file={file} />
                         ))}
                       </div>
                     )}
                     <div className={cn(
-                      "absolute left-3 bottom-2 transition-opacity flex gap-2",
+                      "absolute left-3 bottom-2 mt-4 transition-opacity flex gap-2",
                       feedbackStates.get(message.id!) || "opacity-0 group-hover:opacity-100"
                     )}>
                       <Tooltip>
@@ -395,7 +384,7 @@ export function ChatMessages({ messages, isLoading, onRegenerate, onEdit, onFeed
                               "p-1 transition-colors relative",
                               feedbackStates.get(message.id!) === "like" 
                                 ? "text-[#58E877] bg-[#58E877]/10" 
-                                : "text-white hover:text-[#58E877] hover:bg-[#58E877]/5",
+                                : "text-[#FAF8F6] hover:text-[#58E877] hover:bg-[#58E877]/5",
                               isSubmittingFeedback === message.id && "opacity-50 cursor-not-allowed"
                             )}
                             disabled={isSubmittingFeedback === message.id}
@@ -417,7 +406,7 @@ export function ChatMessages({ messages, isLoading, onRegenerate, onEdit, onFeed
                               "p-1 transition-colors relative",
                               feedbackStates.get(message.id!) === "dislike" 
                                 ? "text-red-500 bg-red-500/10" 
-                                : "text-white hover:text-red-500 hover:bg-red-500/5",
+                                : "text-[#FAF8F6] hover:text-red-500 hover:bg-red-500/5",
                               isSubmittingFeedback === message.id && "opacity-50 cursor-not-allowed"
                             )}
                             disabled={isSubmittingFeedback === message.id}

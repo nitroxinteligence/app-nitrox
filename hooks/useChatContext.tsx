@@ -103,6 +103,8 @@ export function ChatProvider({ children, agentId, sessionId }: ChatProviderProps
       setIsLoading(true)
       setError(null)
       
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
       await ensureChatSession()
 
       const { data, error } = await supabase

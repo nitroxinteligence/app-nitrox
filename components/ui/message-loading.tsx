@@ -1,13 +1,22 @@
 "use client"
 
-export function MessageLoading() {
+interface MessageLoadingProps {
+  size?: 'default' | 'large'
+}
+
+export function MessageLoading({ size = 'default' }: MessageLoadingProps) {
+  const sizeStyles = {
+    default: 'w-6 h-6',
+    large: 'w-10 h-10'
+  }
+
   return (
     <svg
       width="24"
       height="24"
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"
-      className="text-foreground"
+      className={`text-[#58E877] animate-pulse ${sizeStyles[size]}`}
     >
       <circle cx="4" cy="12" r="2" fill="currentColor">
         <animate

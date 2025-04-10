@@ -14,7 +14,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
-  const showSidebar = !pathname.startsWith("/form-sdr") && !pathname.startsWith("/colaborador-IA") && !pathname.startsWith("/login")
+  const showSidebar = !pathname.startsWith("/form-sdr") && !pathname.startsWith("/colaborador-IA") && !pathname.startsWith("/login") && !(pathname.startsWith("/chat") && !pathname.startsWith("/chats"))
   const showTopNav =
     pathname !== "/" && !pathname.startsWith("/colaborador-IA") && !pathname.startsWith("/colaborador-ia-1") && !pathname.startsWith("/login")
 

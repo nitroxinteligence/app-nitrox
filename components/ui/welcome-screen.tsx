@@ -2,11 +2,11 @@
 
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { Search, ArrowUpIcon, Paperclip, History } from "lucide-react"
+import { History } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
 import { ChatHistoryPopup } from "@/components/chat/chat-history-popup"
 import { toast } from "@/components/ui/use-toast"
+import { ChatInput } from "@/components/chat/chat-input"
 
 interface WelcomeScreenProps {
   onSendMessage: (content: string, attachments?: File[]) => Promise<void>
@@ -21,9 +21,7 @@ export function WelcomeScreen({
   userName = "usuário",
   agentId = "default" 
 }: WelcomeScreenProps) {
-  const [message, setMessage] = useState("")
   const [timeOfDay, setTimeOfDay] = useState("")
-  const [attachments, setAttachments] = useState<File[]>([])
   const [isWebSearchActive, setIsWebSearchActive] = useState(false)
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   
@@ -39,24 +37,6 @@ export function WelcomeScreen({
     }
   }, [])
   
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!message.trim() && !attachments.length) return
-    
-    // Armazenar o estado de pesquisa na web no localStorage para persistir entre componentes
-    localStorage.setItem('webSearchEnabled', isWebSearchActive.toString());
-    
-    await onSendMessage(message, attachments.length > 0 ? attachments : undefined)
-    setMessage("")
-    setAttachments([])
-  }
-  
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setAttachments(Array.from(e.target.files))
-    }
-  }
-
   const toggleWebSearch = () => {
     const newState = !isWebSearchActive;
     setIsWebSearchActive(newState);
@@ -79,11 +59,6 @@ export function WelcomeScreen({
       setIsWebSearchActive(savedWebSearchSetting === 'true');
     }
   }, []);
-
-  // Atualizar ariaLabel para acessibilidade
-  const webSearchAriaLabel = isWebSearchActive 
-    ? "Desativar pesquisa na web" 
-    : "Ativar pesquisa na web";
 
   return (
     <div className="flex flex-col items-center justify-center w-full h-full">
@@ -110,66 +85,13 @@ export function WelcomeScreen({
         <p className="text-xl text-[#f4f4f4]/80 mb-12">Como posso ajudar você hoje?</p>
         
         <div className="w-full">
-          <form onSubmit={handleSubmit} className="relative">
-            <div className="rounded-xl bg-[#1c1c1c] p-4">
-              <textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="O que você deseja saber?"
-                className="w-full bg-transparent border-none text-white resize-none outline-none placeholder:text-[#f4f4f4]/40 min-h-[100px]"
-              />
-              
-              {attachments.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {attachments.map((file, index) => (
-                    <div key={index} className="bg-[#272727] text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5">
-                      <Paperclip className="h-3 w-3" />
-                      <span className="truncate max-w-[150px]">{file.name}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              
-              <div className="flex items-center justify-between mt-4">
-                <div className="flex items-center gap-2">
-                  <label className="cursor-pointer p-2 rounded-full text-[#f4f4f4]/60 hover:text-white hover:bg-[#272727]">
-                    <Paperclip className="h-5 w-5" />
-                    <input 
-                      type="file" 
-                      className="hidden" 
-                      onChange={handleFileChange} 
-                      multiple
-                    />
-                  </label>
-                  
-                  <button
-                    type="button"
-                    onClick={toggleWebSearch}
-                    className={`flex items-center gap-2 px-3 py-1 ml-2 rounded-full ${
-                      isWebSearchActive ? 
-                      "bg-[#57E676]/20 text-[#57E676] hover:bg-[#57E676]/30" : 
-                      "text-[#f4f4f4]/60 hover:text-white hover:bg-[#272727]"
-                    }`}
-                    aria-label={webSearchAriaLabel}
-                  >
-                    <Search className="h-4 w-4" />
-                    <span className="text-sm">Pesquisa na Web</span>
-                  </button>
-                </div>
-                
-                <Button
-                  type="submit"
-                  disabled={(!message.trim() && !attachments.length) || isLoading}
-                  className={cn(
-                    "rounded-full p-2.5 bg-[#58E877] hover:bg-[#4EDB82] disabled:opacity-50",
-                    (!message.trim() && !attachments.length) ? "text-[#1a1a1c]/60" : "text-[#1a1a1c]"
-                  )}
-                >
-                  <ArrowUpIcon className="h-5 w-5" />
-                </Button>
-              </div>
-            </div>
-          </form>
+          <ChatInput
+            onSendMessage={onSendMessage}
+            isLoading={isLoading}
+            showAttachments={true}
+            onSearchWeb={toggleWebSearch}
+            isWebSearchActive={isWebSearchActive}
+          />
         </div>
       </motion.div>
 

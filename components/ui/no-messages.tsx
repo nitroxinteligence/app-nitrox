@@ -12,7 +12,6 @@ interface NoMessagesProps {
     description: string
   }
   userName?: string
-  onWebSearchChange?: (enabled: boolean) => void
 }
 
 export function NoMessages({ 
@@ -20,8 +19,7 @@ export function NoMessages({
   isLoading, 
   agentInfo, 
   briefingData,
-  userName,
-  onWebSearchChange
+  userName 
 }: NoMessagesProps) {
   return (
     <div className="flex w-full h-full flex-col items-center justify-center">
@@ -30,7 +28,6 @@ export function NoMessages({
         isLoading={isLoading}
         userName={userName}
         agentId={agentInfo?.id}
-        onWebSearchChange={onWebSearchChange}
       />
     </div>
   )

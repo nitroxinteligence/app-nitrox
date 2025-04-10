@@ -1,94 +1,66 @@
+/**
+ * Formata a mensagem da AI para exibição, preservando formatação Markdown essencial
+ */
 export function formatAIMessage(message: string): string {
-  // Remove toda formatação markdown exceto negrito e bullets
-  let formattedText = message
-    // Remove headers markdown
-    .replace(/^#{1,6}\s+/gm, '')
-    // Remove blocos de código
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/`([^`]+)`/g, '$1')
-    // Remove itálicos
-    .replace(/(?<!\*)\*(?!\*)([^*]+)(?<!\*)\*(?!\*)/g, '$1')
-    .replace(/_([^_]+)_/g, '$1')
-    // Padroniza bullets para •
-    .replace(/^[-*]\s+/gm, '• ')
-    // Remove sublinhados
-    .replace(/_{2,}/g, '')
-    // Remove linhas horizontais
-    .replace(/^[-*=]{3,}\s*$/gm, '')
-    // Remove espaços extras e linhas em branco múltiplas
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line)
-    .join('\n');
+  if (!message) return "";
 
-  // Processa a estrutura do texto
-  formattedText = formattedText
-    .split('\n')
-    .map(line => {
-      // Preserva linhas que já estão em negrito
-      if (line.match(/^\*\*.*\*\*$/)) {
-        return line;
-      }
+  let formattedMessage = message;
 
-      // Processa numeração
-      const numberMatch = line.match(/^(\d+)(?:\.(\d+))?\.\s*(.*)/);
-      if (numberMatch) {
-        const [, mainNum, subNum, content] = numberMatch;
-        // Garante que a frase termine com ponto
-        const formattedContent = content.trim().replace(/([^.!?])$/, '$1.');
-        if (subNum) {
-          return `${mainNum}.${subNum}. ${formattedContent}`;
-        }
-        return `${mainNum}. ${formattedContent}`;
-      }
+  // Normaliza quebras de linha
+  formattedMessage = formattedMessage
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
 
-      // Processa bullets
-      if (line.startsWith('•')) {
-        // Garante que bullets terminem com ponto
-        const content = line.substring(2).trim();
-        return `• ${content.replace(/([^.!?])$/, '$1.')}`;
-      }
+  // Remove headers extras (manter somente os essenciais h1, h2, h3)
+  formattedMessage = formattedMessage
+    .replace(/^#{4,}.*$/gm, "")
+    .replace(/^# /gm, "## "); // Converte H1 para H2 para manter consistência
 
-      // Processa títulos e subtítulos (converte para negrito)
-      if (line.match(/^[A-Z][\w\s]+:?$/)) {
-        return `**${line}**`;
-      }
+  // Garante que títulos em negrito sejam formatados corretamente
+  formattedMessage = formattedMessage
+    .replace(/\*\*([^*\n]+)\*\*:/g, "**$1:**");
 
-      // Garante que frases normais terminem com ponto
-      return line.replace(/([^.!?])$/, '$1.');
-    })
-    .join('\n');
+  // Corrige listas com marcadores
+  formattedMessage = formattedMessage
+    .replace(/^\s*[-*+]\s+/gm, "- ") // Normaliza bullets para um formato único
+    .replace(/\n\s*[-*+]\s+/gm, "\n- "); // Garante que bullets após quebras de linha são formatados
 
-  // Estrutura o espaçamento
-  formattedText = formattedText
-    .split('\n')
-    .reduce((acc, line, index, array) => {
-      // Adiciona espaço duplo após títulos em negrito
-      if (line.match(/^\*\*.*\*\*$/)) {
-        return acc + line + '\n\n';
-      }
+  // Corrige listas numeradas
+  formattedMessage = formattedMessage
+    .replace(/^\s*(\d+)[.)]\s+/gm, "$1. ")
+    .replace(/\n\s*(\d+)[.)]\s+/gm, "\n$1. ");
+    
+  // Garante que todas as frases terminam com pontuação
+  formattedMessage = formattedMessage
+    .replace(/([a-zA-Z0-9])\n/g, "$1.\n") // Adiciona ponto no final de frases que terminam com quebra de linha
+    .replace(/([a-zA-Z0-9])$/g, "$1."); // Adiciona ponto no final do texto
 
-      // Agrupa bullets juntos
-      if (line.startsWith('•')) {
-        const nextLine = array[index + 1];
-        return acc + line + (nextLine?.startsWith('•') ? '\n' : '\n\n');
-      }
+  // Estrutura o documento para melhor legibilidade
+  formattedMessage = formattedMessage
+    .replace(/(\*\*[^*\n]+\*\*:?\.?)\n/g, "$1\n\n") // Garante quebra dupla após títulos em negrito
+    .replace(/(\n- [^\n]+)(\n)(?!- )/g, "$1\n$2") // Agrupa itens relacionados juntos
+    .replace(/\n{3,}/g, "\n\n"); // Remove múltiplas quebras de linha
 
-      // Agrupa itens numerados juntos
-      if (line.match(/^\d+\./)) {
-        const nextLine = array[index + 1];
-        return acc + line + (nextLine?.match(/^\d+\./) ? '\n' : '\n\n');
-      }
+  // Garante espaçamento adequado após código, títulos e listas
+  formattedMessage = formattedMessage
+    .replace(/```[\s\S]*?```\s*/, match => match + "\n\n")
+    .replace(/#{1,3}.*\s*/, match => match + "\n");
 
-      // Adiciona divisor antes de nova seção
-      if (index > 0 && line.match(/^[A-Z][\w\s]+:$/)) {
-        return acc + '\n---\n\n' + line + '\n';
-      }
-
-      // Espaçamento padrão para outras linhas
-      return acc + line + '\n';
-    }, '');
-
-  return formattedText.trim();
+  // Limpa linhas em branco extras
+  formattedMessage = formattedMessage
+    .replace(/^\s*[\r\n]/gm, "") // Remove linhas em branco
+    .replace(/\n{3,}/g, "\n\n"); // Limita a 2 quebras seguidas
+    
+  // Tratar caracteres especiais e emojis
+  formattedMessage = formattedMessage
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+    
+  // Formatação final e limpeza
+  return formattedMessage.trim();
 }
 

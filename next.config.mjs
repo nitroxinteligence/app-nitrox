@@ -17,7 +17,38 @@ const nextConfig = {
     unoptimized: true,
   },
   experimental: {
-    webpackBuildWorker: true
+    webpackBuildWorker: true,
+    optimizePackageImports: [
+      'lucide-react',
+      'framer-motion'
+    ]
+  },
+  swcMinify: true,
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production'
+  },
+  webpack: (config, { isServer }) => {
+    // Correção para problemas de carregamento de chunks
+    config.optimization.splitChunks = {
+      chunks: 'all',
+      cacheGroups: {
+        default: false,
+        vendors: false,
+        commons: {
+          name: 'commons',
+          chunks: 'all',
+          minChunks: 2,
+        },
+        framework: {
+          name: 'framework',
+          chunks: 'all',
+          test: /[\\/]node_modules[\\/](react|react-dom|next)[\\/]/,
+          priority: 40,
+        }
+      }
+    };
+    
+    return config;
   },
   async rewrites() {
     return [

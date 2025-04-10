@@ -1,7 +1,19 @@
 "use client"
 
-import { ChatProvider } from "@/hooks/useChatContext"
-import { ChatInterface } from "@/components/chat/chat-interface"
+import dynamic from 'next/dynamic'
+import { Suspense } from 'react'
+import { Spinner } from "@/components/ui/spinner"
+
+// Carregamento dinâmico dos componentes com fallback
+const ChatProvider = dynamic(() => import('@/hooks/useChatContext').then(mod => mod.ChatProvider), {
+  ssr: false,
+  loading: () => <div className="flex items-center justify-center w-full h-screen"><Spinner size="lg" /></div>
+})
+
+const ChatInterface = dynamic(() => import('@/components/chat/chat-interface').then(mod => ({ default: mod.ChatInterface })), {
+  ssr: false,
+  loading: () => <div className="flex items-center justify-center w-full h-screen"><Spinner size="lg" /></div>
+})
 
 interface ChatPageProps {
   params: {
@@ -18,9 +30,11 @@ export default function ChatPage({ params }: ChatPageProps) {
   }
 
   return (
-    <ChatProvider agentId={agentId} sessionId={sessionId}>
-      <ChatInterface />
-    </ChatProvider>
+    <Suspense fallback={<div className="flex items-center justify-center w-full h-screen"><Spinner size="lg" /></div>}>
+      <ChatProvider agentId={agentId} sessionId={sessionId}>
+        <ChatInterface />
+      </ChatProvider>
+    </Suspense>
   )
 }
 

@@ -107,6 +107,12 @@ export function ChatHistory({ agentId, currentSessionId }: ChatHistoryProps) {
   }
 
   const handleSessionClick = (sessionId: string) => {
+    // Não precisa fazer nada se já está no mesmo chat
+    if (sessionId === currentSessionId) {
+      return;
+    }
+    
+    // Navegação normal para o próximo chat
     router.push(`/chat/${agentId}/${sessionId}`)
   }
 
@@ -273,14 +279,14 @@ export function ChatHistory({ agentId, currentSessionId }: ChatHistoryProps) {
                     "w-full flex items-center justify-between px-4 py-2.5 transition-colors duration-200 text-sm",
                     currentSessionId === chat.id
                       ? "bg-[#1a1a1c] text-[#58E877] border-l-2 border-l-[#58E877]"
-                      : "text-[#E8F3ED]/60 hover:text-white",
+                      : "text-[#f4f4f4]/60 hover:text-white",
                   )}
                 >
                   <div className="flex items-center flex-grow cursor-pointer min-w-0" onClick={() => handleSessionClick(chat.id)}>
                     <MessageSquare
                       className={cn(
                         "w-4 h-4 mr-2.5 flex-shrink-0 transition-colors duration-200",
-                        currentSessionId === chat.id ? "text-[#58E877]" : "text-[#E8F3ED]/60",
+                        currentSessionId === chat.id ? "text-[#58E877]" : "text-[#f4f4f4]/60",
                       )}
                     />
                     <span className="truncate pr-2">{chat.title}</span>
@@ -319,7 +325,7 @@ export function ChatHistory({ agentId, currentSessionId }: ChatHistoryProps) {
         <AlertDialogContent className="bg-[#1a1a1c] border-[#272727] text-white">
           <AlertDialogHeader>
             <AlertDialogTitle>Tem certeza que deseja excluir este chat?</AlertDialogTitle>
-            <AlertDialogDescription className="text-[#E8F3ED]/60">
+            <AlertDialogDescription className="text-[#f4f4f4]/60">
               Esta ação não pode ser desfeita. Isso excluirá permanentemente o chat e removerá seus dados de nossos
               servidores.
             </AlertDialogDescription>

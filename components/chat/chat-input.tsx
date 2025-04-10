@@ -7,6 +7,12 @@ import { toast } from "@/components/ui/use-toast"
 import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE } from "@/types/chat"
 import { cn } from "@/lib/utils"
 import Image from "next/image"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 interface ChatInputProps {
   onSendMessage?: (content: string, attachments?: File[]) => Promise<void>;
@@ -54,16 +60,6 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   
   const isLoading = externalLoading || isInternalLoading;
-
-  // Autoajustar a altura do textarea com base no conteúdo
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (textarea) {
-      textarea.style.height = 'auto';
-      const newHeight = Math.min(textarea.scrollHeight, 150);
-      textarea.style.height = `${newHeight}px`;
-    }
-  }, [message]);
 
   // Cleanup previews on unmount
   useEffect(() => {
@@ -117,7 +113,10 @@ export function ChatInput({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
-      handleSubmit(e as any)
+      // Enviar o formulário diretamente em vez de converter o evento
+      handleSubmit({
+        preventDefault: () => {},
+      } as React.FormEvent)
     }
   }
 
@@ -198,6 +197,25 @@ export function ChatInput({
     }
   };
 
+  // Adicionar useEffect para fazer o textarea se auto-ajustar com base no conteúdo
+  useEffect(() => {
+    if (textareaRef.current) {
+      // Reset height - importante para encolher quando texto é removido
+      textareaRef.current.style.height = 'auto';
+      
+      // Definir altura baseada no scroll height
+      const scrollHeight = textareaRef.current.scrollHeight;
+      textareaRef.current.style.height = scrollHeight + 'px';
+      
+      // Limitar altura máxima (equivalente a maxRows)
+      if (scrollHeight > 200) {
+        textareaRef.current.style.overflowY = 'auto';
+      } else {
+        textareaRef.current.style.overflowY = 'hidden';
+      }
+    }
+  }, [message]);
+
   return (
     <div className="w-full">
       {attachments.length > 0 && (
@@ -208,7 +226,7 @@ export function ChatInput({
               className="relative group flex items-center gap-2 bg-[#1c1c1c] text-white text-xs px-3 py-2 rounded"
             >
               {attachment.type === "image" ? (
-                <div className="relative h-8 w-8 rounded overflow-hidden">
+                <div className="relative h-9 w-9 rounded overflow-hidden">
                   <Image
                     src={attachment.preview}
                     alt="Preview"
@@ -217,7 +235,7 @@ export function ChatInput({
                   />
                 </div>
               ) : (
-                <FileText className="h-4 w-4 text-[#58E877]" />
+                <FileText className="h-5 w-5 text-[#58E877]" />
               )}
               <span className="truncate max-w-[150px]">{attachment.file.name}</span>
               <button
@@ -232,75 +250,86 @@ export function ChatInput({
         </div>
       )}
       
-      <div className="rounded-xl bg-[#1c1c1c] p-3">
-        <textarea
-          ref={textareaRef}
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="O que você deseja saber?"
-          className="w-full bg-transparent border-none text-white resize-none outline-none placeholder:text-[#f4f4f4]/40 min-h-[24px] max-h-[150px] overflow-y-auto"
-          rows={1}
-        />
-        
-        <div className="flex items-center justify-between mt-2">
-          <div className="flex items-center gap-2">
-            {showAttachments && (
-              <label className="cursor-pointer p-2 rounded-full text-[#f4f4f4]/60 hover:text-white hover:bg-[#272727]">
-                <Paperclip className="h-5 w-5" />
-                <input 
-                  ref={fileInputRef}
-                  type="file" 
-                  className="hidden" 
-                  onChange={handleFileSelect} 
-                  multiple
-                  accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xls,.xlsx,.txt"
-                />
-              </label>
-            )}
-            
-            <button
-              type="button"
-              onClick={onSearchWeb}
-              className={`flex items-center gap-2 px-3 py-1 ml-2 rounded-full ${
-                isWebSearchActive ? 
-                "bg-[#57E676]/20 text-[#57E676] hover:bg-[#57E676]/30" : 
-                "text-[#f4f4f4]/60 hover:text-white hover:bg-[#272727]"
-              }`}
-              aria-label={webSearchAriaLabel}
-            >
-              <Search className="h-4 w-4" />
-              <span className="text-sm">Pesquisa na Web</span>
-            </button>
-          </div>
+      <form onSubmit={handleSubmit} className="relative">
+        <div className="rounded-xl bg-[#1c1c1c] p-3 border border-[#3A3A3C]">
+          <textarea
+            ref={textareaRef}
+            value={message}
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setMessage(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="O que você deseja saber?"
+            className="w-full bg-transparent border-none text-[#FAF8F6] resize-none outline-none placeholder:text-[#f4f4f4]/40 min-h-[24px] max-h-[200px] text-base"
+            rows={1}
+            style={{ overflow: 'hidden' }}
+          />
           
-          {isLoading ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={handleCancel}
-              className="rounded-full p-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-500"
-              aria-label="Cancelar geração"
-            >
-              <Square className="h-5 w-5" />
-            </Button>
-          ) : (
-            <Button
-              type="submit"
-              onClick={handleSubmit}
-              disabled={(!message.trim() && attachments.length === 0)}
-              className={cn(
-                "rounded-full p-2.5 bg-[#58E877] hover:bg-[#4EDB82] disabled:opacity-50",
-                (!message.trim() && attachments.length === 0) ? "text-[#1a1a1c]/60" : "text-[#1a1a1c]"
+          <div className="flex items-center justify-between mt-2">
+            <div className="flex items-center gap-2">
+              {showAttachments && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <label className="cursor-pointer p-2 rounded-full text-[#f4f4f4]/60 hover:text-[#FAF8F6] hover:bg-[#272727]">
+                        <Paperclip className="h-5 w-5" />
+                        <input 
+                          ref={fileInputRef}
+                          type="file" 
+                          className="hidden" 
+                          onChange={handleFileSelect} 
+                          multiple
+                          accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                        />
+                      </label>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <p className="text-xs">Adicionar arquivos</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               )}
-              aria-label="Enviar mensagem"
-            >
-              <Send className="h-5 w-5" />
-            </Button>
-          )}
+              
+              <button
+                type="button"
+                onClick={onSearchWeb}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm ${
+                  isWebSearchActive ? 
+                  "bg-[#57E676]/20 text-[#57E676] hover:bg-[#57E676]/30" : 
+                  "text-[#f4f4f4]/60 hover:text-white hover:bg-[#272727]"
+                }`}
+                aria-label={webSearchAriaLabel}
+              >
+                <Search className="h-4 w-4" />
+                <span>Pesquisa na Web</span>
+              </button>
+            </div>
+            
+            {isLoading ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handleCancel}
+                className="rounded-full p-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-500"
+                aria-label="Cancelar geração"
+              >
+                <Square className="h-5 w-5" />
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                disabled={(!message.trim() && attachments.length === 0)}
+                className={cn(
+                  "rounded-full p-2.5 bg-[#58E877] hover:bg-[#4EDB82] disabled:opacity-50",
+                  (!message.trim() && attachments.length === 0) ? "text-[#1a1a1c]/60" : "text-[#1a1a1c]"
+                )}
+                aria-label="Enviar mensagem"
+              >
+                <Send className="h-5 w-5" />
+              </Button>
+            )}
+          </div>
         </div>
-      </div>
+      </form>
     </div>
   )
 }

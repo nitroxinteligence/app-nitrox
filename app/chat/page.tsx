@@ -6,9 +6,11 @@ import { ChatHistory } from "@/components/chat/chat-history"
 import { ChatInput } from "@/components/chat/chat-input"
 import { ChatMessages } from "@/components/chat/chat-messages"
 import { ChatHeader } from "@/components/chat/chat-header"
+import { toast } from "@/components/ui/use-toast"
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<any[]>([])
+  const [isSearchingWeb, setIsSearchingWeb] = useState(false)
 
   const handleSendMessage = async (content: string) => {
     // Add user message
@@ -43,7 +45,11 @@ export default function ChatPage() {
               <div className="flex-1 overflow-y-auto p-4">
                 <ChatMessages messages={messages} />
               </div>
-              <ChatInput onSend={handleSendMessage} />
+              <ChatInput 
+                onSend={handleSendMessage} 
+                isLoading={isSearchingWeb}
+                showAttachments
+              />
             </div>
           </div>
         </motion.div>

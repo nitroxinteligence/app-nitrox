@@ -1,6 +1,6 @@
 import { Attachment, ALLOWED_FILE_TYPES, MAX_FILE_SIZE } from "@/types/chat"
 import { supabase } from "@/lib/supabase-client"
-import { analyzeImage, analyzeDocument } from "@/lib/groq"
+import { analyzeImage, analyzeDocument, analyzeDocumentByUrl } from "@/lib/groq"
 
 export class FileValidationError extends Error {
   constructor(message: string) {
@@ -149,6 +149,16 @@ export async function createAttachment(
   fileUrl: string,
   extractedText?: string
 ): Promise<Attachment> {
+  // Log detalhado para depuração
+  console.log('Criando registro de anexo:', {
+    messageId,
+    fileName: file.name,
+    fileType: file.type, 
+    fileSize: file.size,
+    hasExtractedText: !!extractedText,
+    extractedTextLength: extractedText?.length || 0
+  });
+
   const { data, error } = await supabase
     .from('attachments')
     .insert([{
@@ -157,7 +167,8 @@ export async function createAttachment(
       file_type: file.type,
       file_size: file.size,
       file_url: fileUrl,
-      extracted_text: extractedText,
+      content: extractedText || null, // Usar o campo 'content' para o texto extraído
+      extracted_text: extractedText, // Manter esse campo para compatibilidade
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }])
@@ -165,9 +176,12 @@ export async function createAttachment(
     .single()
 
   if (error) {
+    console.error('Erro detalhado ao criar anexo:', error);
     throw new Error("Erro ao criar registro do anexo")
   }
 
+  // Verificar se o anexo foi criado corretamente
+  console.log('Anexo criado com sucesso:', data);
   return data
 }
 
@@ -195,11 +209,54 @@ async function getImageMetadata(file: File): Promise<{ width?: number; height?: 
   })
 }
 
-export async function processFile(file: File): Promise<{ url: string; text: string }> {
+// Função auxiliar para obter o conteúdo de um arquivo como base64
+async function getFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const base64String = reader.result as string
+      // Remove the data URL prefix (e.g., "data:application/pdf;base64,")
+      const base64 = base64String.split(',')[1]
+      resolve(base64)
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+// Função para detectar melhor o tipo de arquivo
+function detectFileType(file: File): "text" | "image" | "document" | "other" {
+  const mimeType = getMimeType(file).toLowerCase()
+  const extension = file.name.split('.').pop()?.toLowerCase() || ''
+  
+  if (mimeType.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(extension)) {
+    return "image"
+  }
+  
+  if (mimeType === 'text/plain' || extension === 'txt') {
+    return "text"
+  }
+  
+  if (
+    mimeType.includes('pdf') || 
+    mimeType.includes('doc') || 
+    mimeType.includes('word') ||
+    mimeType.includes('excel') ||
+    mimeType.includes('sheet') ||
+    ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(extension)
+  ) {
+    return "document"
+  }
+  
+  return "other"
+}
+
+export async function processFile(file: File): Promise<{ url: string; text: string; fileType: string; content?: string }> {
   await validateFile(file)
   
   let extractedText = ""
   let fileUrl = ""
+  const fileType = detectFileType(file)
   
   try {
     // Upload the file first
@@ -208,52 +265,111 @@ export async function processFile(file: File): Promise<{ url: string; text: stri
     // Extract basic metadata for all files
     const metadata = {
       name: file.name,
-      type: file.type,
+      type: getMimeType(file),
       size: file.size,
       lastModified: new Date(file.lastModified).toISOString()
     }
 
-    console.log('Iniciando processamento de arquivo:', {
+    console.log(`Iniciando processamento de arquivo (${fileType}):`, {
       fileName: file.name,
       fileType: file.type,
+      detectedType: fileType,
       fileUrl
     })
 
-    // Handle different file types
-    if (file.type.startsWith('image/')) {
-      // Para imagens, usar o Groq para análise detalhada
-      extractedText = await analyzeImage(fileUrl)
-      console.log('Análise de imagem concluída:', {
-        fileName: file.name,
-        extractedText: extractedText.substring(0, 100) + '...'
-      })
-    } else if (file.type === "text/plain") {
-      extractedText = await readTextFile(file)
-    } else if (file.type.includes('pdf') || file.type.includes('doc') || file.type.includes('sheet')) {
-      // Para documentos, usar o Groq para análise
-      const documentContent = await readTextFile(file)
-      extractedText = await analyzeDocument(documentContent)
-    } else {
-      // For other file types, just store basic metadata
-      extractedText = JSON.stringify(metadata, null, 2)
+    // Processamento específico por tipo de arquivo
+    switch (fileType) {
+      case "image":
+        try {
+          // Para imagens, usar o Groq para análise detalhada
+          extractedText = await analyzeImage(fileUrl)
+          console.log('Análise de imagem concluída:', {
+            fileName: file.name,
+            extractedTextLength: extractedText.length
+          })
+        } catch (imageError) {
+          console.error('Erro ao analisar imagem:', imageError)
+          extractedText = `Não foi possível analisar a imagem: ${file.name}. Erro: ${imageError instanceof Error ? imageError.message : 'Erro desconhecido'}`
+        }
+        break
+        
+      case "text":
+        try {
+          // Para arquivos de texto, ler o conteúdo diretamente
+          console.log('Lendo arquivo de texto:', file.name)
+          extractedText = await readTextFile(file)
+          
+          // Se o texto for muito grande, analisá-lo com Groq
+          if (extractedText.length > 5000) {
+            console.log('Texto grande, enviando para análise com Groq:', {
+              fileName: file.name,
+              textLength: extractedText.length
+            })
+            
+            extractedText = await analyzeDocument(extractedText.substring(0, 50000))
+          }
+          
+          console.log('Processamento de texto concluído:', {
+            fileName: file.name,
+            extractedTextLength: extractedText.length
+          })
+        } catch (textError) {
+          console.error('Erro ao processar arquivo de texto:', textError)
+          extractedText = `Não foi possível processar o arquivo de texto: ${file.name}. Erro: ${textError instanceof Error ? textError.message : 'Erro desconhecido'}`
+        }
+        break
+        
+      case "document":
+        try {
+          // Para documentos como PDF, DOC, etc.
+          console.log('Processando documento:', file.name)
+          
+          // Enviar a URL para a API do Groq analisar
+          const documentPrompt = `Analise detalhadamente o conteúdo do documento: ${file.name} (${file.type}, ${(file.size / 1024).toFixed(2)} KB). Extraia as informações principais, identifique tópicos e forneça um resumo completo do conteúdo.`
+          
+          extractedText = await analyzeDocumentByUrl(fileUrl, documentPrompt)
+          
+          console.log('Análise de documento concluída:', {
+            fileName: file.name,
+            extractedTextLength: extractedText.length
+          })
+        } catch (docError) {
+          console.error('Erro ao processar documento:', docError)
+          extractedText = `Não foi possível processar o documento: ${file.name}. Erro: ${docError instanceof Error ? docError.message : 'Erro desconhecido'}`
+        }
+        break
+        
+      default:
+        // Para outros tipos de arquivo
+        extractedText = `Arquivo: ${file.name} (${file.type}, ${(file.size / 1024).toFixed(2)} KB)\n\n` + 
+                        JSON.stringify(metadata, null, 2)
+    }
+
+    // Garantir que temos algum texto para retornar
+    if (!extractedText || extractedText.trim() === '') {
+      extractedText = `[Arquivo enviado: ${file.name} (${(file.size / 1024).toFixed(2)} KB)]`
     }
 
     console.log('Processamento de arquivo concluído:', {
       fileUrl,
-      extractedText: extractedText.substring(0, 100) + '...'
+      fileType,
+      extractedTextLength: extractedText.length
     })
   } catch (error) {
     console.error("Erro ao processar arquivo:", error)
     throw new Error(`Erro ao processar arquivo ${file.name}: ${error instanceof Error ? error.message : 'Erro desconhecido'}`)
   }
 
+  // Retornar também o campo content para ser usado na tabela attachments
   return {
     url: fileUrl,
-    text: extractedText
+    text: extractedText,
+    content: extractedText, // Para uso no campo content da tabela attachments
+    fileType
   }
 }
 
-export async function processFiles(files: File[]): Promise<Array<{ url: string; text: string }>> {
+export async function processFiles(files: File[]): Promise<Array<{ url: string; text: string; fileType: string }>> {
   console.log('Iniciando processamento de arquivos:', files.map(f => f.name))
   const results = []
   for (const file of files) {

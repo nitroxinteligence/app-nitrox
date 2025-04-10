@@ -30,7 +30,8 @@ export function ChatInterface() {
   const [isSearchingWeb, setIsSearchingWeb] = useState(false)
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false)
   const [isWebSearching, setIsWebSearching] = useState(false)
-  const [showScrollButton, setShowScrollButton] = useState(false)
+  const [isScrolled, setIsScrolled] = useState(false)
+  const [previousSessionId, setPreviousSessionId] = useState<string | null>(null)
   const params = useParams()
   const router = useRouter()
   const agentId = params?.agentId as string
@@ -47,8 +48,13 @@ export function ChatInterface() {
   useEffect(() => {
     const loadMessages = async () => {
       try {
-        setIsTransitioning(true)
+        if (sessionId !== previousSessionId) {
+          setIsTransitioning(true)
+          setChatMessages([])
+        }
+        
         await fetchMessages()
+        setPreviousSessionId(sessionId)
       } catch (error) {
         console.error("Erro ao carregar mensagens:", error)
         toast({
@@ -57,14 +63,16 @@ export function ChatInterface() {
           variant: "destructive",
         })
       } finally {
-        setIsTransitioning(false)
+        setTimeout(() => {
+          setIsTransitioning(false)
+        }, 300)
       }
     }
 
     if (agentId && sessionId) {
       loadMessages()
     }
-  }, [agentId, sessionId, fetchMessages])
+  }, [agentId, sessionId, fetchMessages, previousSessionId])
 
   useEffect(() => {
     loadBriefing()
@@ -121,20 +129,16 @@ export function ChatInterface() {
     try {
       setIsSending(true);
       
-      // Criar um novo AbortController para esta solicitação
       abortControllerRef.current = new AbortController();
       const signal = abortControllerRef.current.signal;
       
-      // Indica que está iniciando a pesquisa na web, se ativada
       if (isWebSearchEnabled) {
         setIsWebSearching(true);
       }
 
-      // Processar anexos se houver
       let processedFiles: { url: string; text: string; fileType: string }[] = []
       if (attachments && attachments.length > 0) {
         try {
-          // Adicionar log detalhado para arquivos enviados
           console.log('Processando anexos:', attachments.map(a => ({
             name: a.name,
             type: a.type,
@@ -143,7 +147,6 @@ export function ChatInterface() {
           
           processedFiles = await processFiles(attachments)
           
-          // Adicionar log detalhado para arquivos processados
           console.log('Anexos processados com sucesso:', processedFiles.map(f => ({
             url: f.url,
             textLength: f.text?.length || 0,
@@ -161,7 +164,6 @@ export function ChatInterface() {
         }
       }
 
-      // Criar o objeto da mensagem com os anexos
       const messageToInsert = {
         role: "user",
         content: content.trim(),
@@ -175,7 +177,6 @@ export function ChatInterface() {
         }))
       }
 
-      // Inserir a mensagem com os anexos em uma única operação
       const { data: messageData, error: messageError } = await supabase
         .from("messages")
         .insert(messageToInsert)
@@ -187,27 +188,84 @@ export function ChatInterface() {
         throw messageError
       }
 
-      // Atualizar o estado local com a mensagem do usuário
+      // Salvar os anexos na tabela 'attachments'
+      if (attachments && attachments.length > 0 && messageData.id) {
+        const attachmentsToInsert = processedFiles.map((file, index) => ({
+          message_id: messageData.id,
+          session_id: sessionId,
+          file_name: attachments[index].name,
+          file_type: attachments[index].type,
+          file_size: attachments[index].size,
+          file_url: file.url,
+          content: file.text || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }));
+
+        // Log para depuração dos dados sendo enviados para o Supabase
+        console.log('Inserindo anexos com session_id:', sessionId, 'e message_id:', messageData.id);
+        console.log('Detalhes dos anexos:', attachmentsToInsert.map(a => ({
+          file_name: a.file_name,
+          content_length: a.content ? a.content.length : 0
+        })));
+
+        const { data: attachmentsData, error: attachmentsError } = await supabase
+          .from("attachments")
+          .insert(attachmentsToInsert)
+          .select();
+
+        if (attachmentsError) {
+          console.error("Erro ao inserir anexos:", attachmentsError);
+          // Não interrompe o fluxo, apenas loga o erro
+        } else {
+          console.log("Anexos salvos com sucesso na tabela 'attachments':", attachmentsData);
+          
+          // Verificar se os anexos foram salvos corretamente
+          const { data: checkData, error: checkError } = await supabase
+            .from("attachments")
+            .select("id, session_id, message_id")
+            .eq("message_id", messageData.id);
+            
+          if (checkError) {
+            console.error("Erro ao verificar anexos salvos:", checkError);
+          } else {
+            console.log("Verificação de anexos salvos:", checkData);
+          }
+          
+          // Atualiza os IDs dos anexos na mensagem
+          if (attachmentsData) {
+            const updatedAttachments = messageData.attachments.map((att: any, index: number) => ({
+              ...att,
+              id: attachmentsData[index]?.id
+            }));
+            
+            // Atualiza a mensagem com os IDs dos anexos
+            await supabase
+              .from("messages")
+              .update({ attachments: updatedAttachments })
+              .eq("id", messageData.id);
+              
+            // Atualiza o messageData local para uso no estado
+            messageData.attachments = updatedAttachments;
+          }
+        }
+      }
+
       const optimisticMessages = [...chatMessages, messageData]
       setChatMessages(optimisticMessages)
 
-      // Preparar mensagens para a API
       const apiMessages = optimisticMessages.map(msg => ({
         role: msg.role,
         content: msg.content,
-        // Incluir anexos para que o modelo de IA possa saber que há imagens
         ...(msg.attachments && msg.attachments.length > 0 && {
           attachments: msg.attachments
         })
       }))
 
-      // Carregar o briefing mais recente
       const briefingContent = await BriefingService.getBriefingContent(agentId)
 
-      // Extrair informações de tipos de arquivo para o contexto
       const fileTypes = processedFiles.map(file => file.fileType || 'documento');
 
-      // Log detalhado do que está sendo enviado para a API
       console.log('Enviando para API:', {
         messages: apiMessages,
         fileAnalysis: processedFiles.map((f, i) => ({
@@ -220,7 +278,6 @@ export function ChatInterface() {
         webSearchEnabled: isWebSearchEnabled
       })
 
-      // Enviar para a API
       const response = await fetch(`/api/chat/${agentId}`, {
         method: "POST",
         headers: {
@@ -233,7 +290,7 @@ export function ChatInterface() {
           briefingContent,
           webSearchEnabled: isWebSearchEnabled
         }),
-        signal, // Adiciona o sinal do AbortController
+        signal,
       })
 
       if (!response.ok) {
@@ -244,7 +301,6 @@ export function ChatInterface() {
 
       const data = await response.json()
       
-      // Inserir resposta do assistente
       const assistantMessage = {
         role: "assistant",
         content: data.message,
@@ -260,10 +316,8 @@ export function ChatInterface() {
 
       if (assistantError) throw assistantError
 
-      // Atualizar o estado local com a resposta do assistente
       setChatMessages([...optimisticMessages, assistantData])
 
-      // Scroll para a última mensagem
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
 
     } catch (error) {
@@ -275,7 +329,7 @@ export function ChatInterface() {
       })
     } finally {
       setIsSending(false);
-      setIsWebSearching(false); // Finaliza a indicação de pesquisa na web
+      setIsWebSearching(false);
     }
   }
 
@@ -288,7 +342,6 @@ export function ChatInterface() {
         const updatedMessages = chatMessages.slice(0, messageIndex)
         setChatMessages(updatedMessages)
         
-        // Preparar mensagens para a API, preservando informação de anexos
         const apiMessages = updatedMessages.map(msg => ({
           role: msg.role,
           content: msg.content,
@@ -297,35 +350,29 @@ export function ChatInterface() {
           })
         }));
         
-        // Coletar todas as análises de arquivos necessárias para o contexto
-        const fileAnalysis = [];
-        const fileTypes = [];
+        const fileAnalysis: string[] = [];
+        const fileTypes: string[] = [];
         
-        // Procurar por mensagens com anexos nas mensagens mantidas
         const messagesWithAttachments = updatedMessages.filter(msg => 
           msg.attachments && msg.attachments.length > 0
         );
         
         if (messagesWithAttachments.length > 0) {
-          // Coletar todos os IDs de anexos
           const allAttachmentIds = messagesWithAttachments.flatMap(msg => 
             (msg.attachments || []).filter(a => a.id).map(a => a.id!)
           );
           
           if (allAttachmentIds.length > 0) {
-            // Buscar a análise de texto para todos os anexos
             const { data: attachmentsData, error: attachmentsError } = await supabase
               .from("attachments")
               .select("id, file_name, file_type, extracted_text")
               .in("id", allAttachmentIds);
               
             if (!attachmentsError && attachmentsData) {
-              // Processar cada anexo
               attachmentsData.forEach(att => {
                 if (att.extracted_text) {
                   fileAnalysis.push(att.extracted_text);
                   
-                  // Determinar o tipo de arquivo
                   const ext = att.file_name.split('.').pop()?.toLowerCase();
                   let fileType = 'documento';
                   
@@ -452,6 +499,46 @@ export function ChatInterface() {
 
       if (updateError) throw updateError
 
+      // Garantir que os anexos da mensagem estejam corretamente na tabela attachments
+      if (originalAttachments && originalAttachments.length > 0) {
+        // Verificar se cada anexo da mensagem existe na tabela attachments
+        const { data: existingAttachments, error: attachmentsCheckError } = await supabase
+          .from("attachments")
+          .select("id, message_id")
+          .eq("message_id", messageId);
+          
+        if (attachmentsCheckError) {
+          console.error("Erro ao verificar anexos existentes:", attachmentsCheckError);
+        } else if (!existingAttachments || existingAttachments.length < originalAttachments.length) {
+          // Se faltam anexos na tabela attachments, adicioná-los
+          const existingIds = existingAttachments ? existingAttachments.map(a => a.id) : [];
+          const missingAttachments = originalAttachments.filter(a => !existingIds.includes(a.id));
+          
+          if (missingAttachments.length > 0) {
+            const attachmentsToInsert = missingAttachments.map(attachment => ({
+              message_id: messageId,
+              session_id: sessionId,
+              file_name: attachment.file_name,
+              file_type: attachment.file_type,
+              file_size: attachment.file_size,
+              file_url: attachment.file_url,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }));
+            
+            const { error: insertAttachmentsError } = await supabase
+              .from("attachments")
+              .insert(attachmentsToInsert);
+              
+            if (insertAttachmentsError) {
+              console.error("Erro ao inserir anexos faltantes:", insertAttachmentsError);
+            } else {
+              console.log("Anexos faltantes adicionados com sucesso");
+            }
+          }
+        }
+      }
+
       // Verificar se existe uma resposta do assistente após esta mensagem
       let assistantMessageToDelete = null;
       if (messageIndex < chatMessages.length - 1 &&
@@ -486,8 +573,8 @@ export function ChatInterface() {
       const briefingContent = await BriefingService.getBriefingContent(agentId);
 
       // Preparar a análise de arquivo para enviar à API - importante para imagens editadas
-      const fileAnalysis = [];
-      const fileTypes = [];
+      const fileAnalysis: string[] = [];
+      const fileTypes: string[] = [];
       
       // Se a mensagem editada tem anexos, inclua a análise desses anexos
       if (editedMessage.attachments && editedMessage.attachments.length > 0) {
@@ -726,27 +813,24 @@ export function ChatInterface() {
     }
   }, []);
 
-  // Detectar quando mostrar o botão de rolagem
+  // Detectar quando o usuário rolar para cima
   useEffect(() => {
-    const handleScroll = () => {
-      if (!messagesEndRef.current) return;
+    const handleScroll = (e: Event) => {
+      const target = e.target as HTMLDivElement;
+      const scrollPosition = target.scrollTop;
+      const threshold = 300; // Pixels a partir do topo para mostrar o botão
       
-      const container = document.querySelector('.messages-container');
-      if (container) {
-        // Mostrar botão quando usuário rolar para cima (200px do fim)
-        const isScrolledUp = container.scrollHeight - container.scrollTop - container.clientHeight > 200;
-        setShowScrollButton(isScrolledUp);
-      }
+      setIsScrolled(scrollPosition < target.scrollHeight - target.clientHeight - threshold);
     };
 
-    const container = document.querySelector('.messages-container');
-    if (container) {
-      container.addEventListener('scroll', handleScroll);
-      return () => container.removeEventListener('scroll', handleScroll);
+    const messagesContainer = document.querySelector('.messages-container');
+    if (messagesContainer) {
+      messagesContainer.addEventListener('scroll', handleScroll);
+      return () => messagesContainer.removeEventListener('scroll', handleScroll);
     }
-  }, [messagesEndRef, chatMessages]);
+  }, []);
 
-  // Função para rolar para o final do chat
+  // Função para rolar até o final do chat
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -757,10 +841,18 @@ export function ChatInterface() {
         title={agent.name}
         agentId={agentId}
         sessionId={sessionId}
+        webSearchStatus={getWebSearchStatus()}
       />
       
       <div className="w-full max-w-3xl mx-auto flex-1 overflow-hidden flex flex-col pt-16">
-        {chatMessages.length === 0 ? (
+        {isTransitioning ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="flex flex-col items-center">
+              <MessageLoading size="large" />
+              <p className="mt-4 text-[#FAF8F6]/70 text-sm">Carregando...</p>
+            </div>
+          </div>
+        ) : chatMessages.length === 0 ? (
           <div className="h-full overflow-hidden">
             <NoMessages 
               agentInfo={agent} 
@@ -772,7 +864,7 @@ export function ChatInterface() {
           </div>
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent px-4 pb-4 messages-container">
+            <div className="flex-1 overflow-y-auto messages-container px-4 pb-2">
               {error ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-red-500 text-center">
@@ -785,12 +877,8 @@ export function ChatInterface() {
                     </button>
                   </div>
                 </div>
-              ) : isTransitioning ? (
-                <div className="flex items-center justify-center h-full">
-                  <MessageLoading />
-                </div>
               ) : (
-                <div className="py-4">
+                <div className="py-2 space-y-4">
                   <ChatMessages
                     messages={chatMessages}
                     isLoading={isLoading}
@@ -803,7 +891,17 @@ export function ChatInterface() {
               )}
             </div>
 
-            <div className="sticky bottom-0 px-4 pb-8 pt-2 bg-gradient-to-t from-[#0A0A0B] via-[#0A0A0B] to-transparent">
+            {isScrolled && (
+              <button
+                onClick={scrollToBottom}
+                className="fixed bottom-24 right-6 p-2 rounded-full bg-[#272727] hover:bg-[#333333] text-white shadow-lg transition-all z-10 animate-fadeIn"
+                aria-label="Rolar para o final da conversa"
+              >
+                <ChevronDown className="h-5 w-5" />
+              </button>
+            )}
+
+            <div className="sticky bottom-0 px-4 pb-4 pt-1 bg-gradient-to-t from-[#0A0A0B] via-[#0A0A0B] to-transparent">
               <ChatInput
                 onSendMessage={handleSendMessage}
                 isLoading={isLoading}
@@ -813,17 +911,6 @@ export function ChatInterface() {
                 onCancel={handleCancelRequest}
               />
             </div>
-
-            {/* Botão para rolar para baixo */}
-            {showScrollButton && (
-              <button
-                onClick={scrollToBottom}
-                className="fixed bottom-20 right-6 p-3 rounded-full bg-[#1c1c1c] text-white shadow-lg hover:bg-[#272727] transition-opacity z-50"
-                aria-label="Rolar para baixo"
-              >
-                <ChevronDown className="h-5 w-5" />
-              </button>
-            )}
           </>
         )}
       </div>

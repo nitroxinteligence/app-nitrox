@@ -577,6 +577,18 @@ export default function TrafficManagerPage() {
                   Dica: Digite "criar campanha" para iniciar o briefing de uma nova campanha.
                 </span>
               </div>
+              
+              {/* Botão de Criar Campanha */}
+              {briefingStep === -1 && messages.length > 0 && (
+                <div className="flex justify-center mt-4">
+                  <Button
+                    onClick={startBriefing}
+                    className="bg-[#4267B2] hover:bg-[#5b7cc2] text-white font-medium"
+                  >
+                    Criar Campanha
+                  </Button>
+                </div>
+              )}
             </form>
           </div>
         </motion.div>
